@@ -22,6 +22,16 @@ Every gameplay option starts **Off**. Enable the combination you want before vis
 
 The challenge plan is saved under this mod’s own save data. A configuration change after the plan exists does not silently reroll teams in the middle of a run. Use the test rebuild action when you intentionally want a new plan.
 
+## Gym Challenge mode — new and untested
+
+**Gym Challenge** is an optional progression mode. It is offered once after the player has chosen a name; choosing **No** leaves the normal game flow unchanged. Choosing **Yes** routes the player into the native starter lab, then uses the normal starter selection and story scripts rather than a replacement starter sequence.
+
+The selected starter is level-adjusted against the first physical gym’s highest intended level. A starter with a super-effective matchup starts two levels below that baseline, a neutral starter starts two levels above it, and a starter facing a super-effective gym type starts five levels above it. If both sides have a super-effective type relationship, the defensive-risk result is used.
+
+After each physical gym badge and native reward flow resolves, Gym Challenge heals the party and routes the player to the next gym. Gen 1 runs through the eight Kanto gyms, then leaves the Elite Four and Champion path entirely native. Gold runs through Johto’s eight gyms, preserves the first native Hall of Fame and credits sequence, and continues with the eight Kanto gyms only after the post-credits Continue boot in New Bark Town. It does not force league, Champion, credits, or story transitions.
+
+> **Do not rely on Gym Challenge for a regular playthrough yet.** This alpha feature passed static and scripted regression checks but has not received a full live playthrough in Red, Blue, Yellow, or Gold.
+
 ## Compatibility
 
 The package targets **Red, Blue, Yellow, and Gold** with Mod API 2. It was statically checked with Gen 1 Recomp’s Gen 2 compatibility checker and uses the documented gym-battle seams rather than raw ROM data.
@@ -37,5 +47,7 @@ The mod contains no ROM content, extracted game data, or game assets.
 ## WIP testing focus
 
 Please test a new save and an existing test save separately. Confirm that the opening leader text, overworld sprite, generated party, physical-gym reward, save/reload behavior, and challenge log agree in at least an early, mid-game, and late-game gym. On Gold, also test a Johto gym and a Kanto gym, then repeat with held-item randomization enabled.
+
+For Gym Challenge, test both prompt answers, each native starter lab, the three type-adjustment outcomes, the first post-reward heal and warp, a bag-full TM retry, save/reload before and after a reward, Gen 1 gym-trainer dialogue and statue names, Gold’s native first Hall of Fame and credits sequence, and the subsequent Continue boot into the Kanto phase.
 
 If you report an issue, include the game, gym, enabled options, whether the challenge was rebuilt, and a screenshot or log excerpt if possible.

@@ -141,6 +141,178 @@ return function(mod)
     end
   end
 
+  -- Gym Challenge is intentionally stored separately from the generated
+  -- battle plan. The plan can be rebuilt for testing without erasing a
+  -- player’s accepted challenge, earned gyms, or routing state.
+  local GYM_CHALLENGE_KEY = "gym_challenge_state"
+  local GYM_CHALLENGE_PROMPT_KEY = "gym_challenge_opt_in"
+
+  local GYM_TELEPORTS = isGold and {
+    FALKNER={ mapId="VIOLET_CITY", x=18, y=17 },
+    BUGSY={ mapId="AZALEA_TOWN", x=10, y=15 },
+    WHITNEY={ mapId="GOLDENROD_CITY", x=24, y=7 },
+    MORTY={ mapId="ECRUTEAK_CITY", x=6, y=27 },
+    JASMINE={ mapId="OLIVINE_CITY", x=10, y=11 },
+    CHUCK={ mapId="CIANWOOD_CITY", x=8, y=43 },
+    PRYCE={ mapId="MAHOGANY_TOWN", x=6, y=13 },
+    CLAIR={ mapId="BLACKTHORN_CITY", x=18, y=11 },
+    BROCK={ mapId="PEWTER_CITY", x=16, y=17 },
+    MISTY={ mapId="CERULEAN_CITY", x=30, y=23 },
+    LT_SURGE={ mapId="VERMILION_CITY", x=10, y=19 },
+    ERIKA={ mapId="CELADON_CITY", x=10, y=29 },
+    JANINE={ mapId="FUCHSIA_CITY", x=8, y=27 },
+    SABRINA={ mapId="SAFFRON_CITY", x=34, y=3 },
+    BLAINE={ mapId="ROUTE_20", x=38, y=7 },
+    BLUE={ mapId="VIRIDIAN_CITY", x=32, y=7 },
+  } or {
+    OPP_BROCK={ mapId="PEWTER_CITY", x=16, y=18 },
+    OPP_MISTY={ mapId="CERULEAN_CITY", x=30, y=20 },
+    OPP_LT_SURGE={ mapId="VERMILION_CITY", x=12, y=20 },
+    OPP_ERIKA={ mapId="CELADON_CITY", x=12, y=28 },
+    OPP_KOGA={ mapId="FUCHSIA_CITY", x=5, y=28 },
+    OPP_SABRINA={ mapId="SAFFRON_CITY", x=34, y=4 },
+    OPP_BLAINE={ mapId="CINNABAR_ISLAND", x=18, y=4 },
+    OPP_GIOVANNI={ mapId="VIRIDIAN_CITY", x=32, y=8 },
+  }
+
+  local GOLD_BADGE_KEYS = {
+    FALKNER="ZEPHYR", BUGSY="HIVE", WHITNEY="PLAIN", MORTY="FOG",
+    JASMINE="MINERAL", CHUCK="STORM", PRYCE="GLACIER", CLAIR="RISING",
+    BROCK="BOULDER", MISTY="CASCADE", LT_SURGE="THUNDER", ERIKA="RAINBOW",
+    JANINE="SOUL", SABRINA="MARSH", BLAINE="VOLCANO", BLUE="EARTH",
+  }
+
+  local function challengeState()
+    local state = mod.save:get(GYM_CHALLENGE_KEY)
+    return type(state) == "table" and state or nil
+  end
+
+  local function challengeActive()
+    local state = challengeState()
+    return state and state.enabled == true and state.game == playing and state or nil
+  end
+
+  local function saveChallenge(state)
+    state.version = 1
+    state.game = playing
+    state.completed = state.completed or {}
+    mod.save:set(GYM_CHALLENGE_KEY, state)
+    return state
+  end
+
+  local function challengePhaseGyms(state)
+    if not isGold then return GYMS end
+    local out, startAt, endAt = {}, state and state.phase == "kanto" and 9 or 1,
+      state and state.phase == "kanto" and 16 or 8
+    for index = startAt, endAt do out[#out + 1] = GYMS[index] end
+    return out
+  end
+
+  local function badgeOwned(game, gym)
+    if not (game and game.save and gym) then return false end
+    if isGold then
+      local player = game.save.player or {}
+      local store = (GOLD_BADGE_KEYS[gym.id] == "BOULDER" or GOLD_BADGE_KEYS[gym.id] == "CASCADE"
+        or GOLD_BADGE_KEYS[gym.id] == "THUNDER" or GOLD_BADGE_KEYS[gym.id] == "RAINBOW"
+        or GOLD_BADGE_KEYS[gym.id] == "SOUL" or GOLD_BADGE_KEYS[gym.id] == "MARSH"
+        or GOLD_BADGE_KEYS[gym.id] == "VOLCANO" or GOLD_BADGE_KEYS[gym.id] == "EARTH")
+        and player.kantoBadges or player.badges
+      return type(store) == "table" and store[GOLD_BADGE_KEYS[gym.id]] == true
+    end
+    local victories = require("data.scripts.victories")
+    local reward = victories[gym.id .. "#" .. gym.partyIndex]
+    return reward and game.save.inventory and game.save.inventory[reward.badge] == true
+  end
+
+  local function typeMultiplier(attacker, defender)
+    local row = attacker and defender and mod.content.type_chart:get(attacker .. ">" .. defender)
+    return tonumber(row and row.multiplier) or 10
+  end
+
+  local function hasAdvantage(attackingTypes, defendingTypes)
+    for _, attack in ipairs(attackingTypes or {}) do
+      for _, defend in ipairs(defendingTypes or {}) do
+        if typeMultiplier(attack, defend) >= 20 then return true end
+      end
+    end
+    return false
+  end
+
+  local function starterLevelFor(species)
+    local firstGym = GYMS[1]
+    local party = VANILLA_PARTIES[firstGym.id] or {}
+    local baseline = 5
+    for _, mon in ipairs(party) do baseline = math.max(baseline, tonumber(mon.level) or 5) end
+    local starter = mod.content.pokemon:get(species) or {}
+    local starterWins = hasAdvantage(starter.types, firstGym.types)
+    local gymWins = hasAdvantage(firstGym.types, starter.types)
+    if gymWins then return math.min(100, baseline + 5) end
+    if starterWins then return math.max(2, baseline - 2) end
+    return math.min(100, baseline + 2)
+  end
+
+  local function nextChallengeGym(state, game)
+    for _, gym in ipairs(challengePhaseGyms(state)) do
+      if not state.completed[gym.id] and not badgeOwned(game, gym) then return gym end
+    end
+    return nil
+  end
+
+  local function queueGymWarp(state, gym)
+    if not (state and gym and GYM_TELEPORTS[gym.id]) then return false end
+    state.pendingWarp = gym.id
+    return true
+  end
+
+  local function warpQueuedGym()
+    local state = challengeActive()
+    local gym = state and state.pendingWarp and BY_ID[state.pendingWarp]
+    local target = gym and GYM_TELEPORTS[gym.id]
+    if not target then return false end
+    state.pendingWarp = nil
+    saveChallenge(state)
+    local ok, err = mod.world:warpTo(target.mapId, target.x, target.y, "up", { arrive="teleport" })
+    if not ok then
+      state.pendingWarp = gym.id
+      saveChallenge(state)
+      mod.log:warn("Gym Challenge warp failed for %s: %s", gym.id, tostring(err))
+      return false
+    end
+    return true
+  end
+
+  local function healChallengeParty(onDone)
+    -- `nurseHeal` is the Mod API's cross-generation recovery operation. Its
+    -- callback runs after the engine has restored the party, allowing a queued
+    -- warp to happen only after the complete native heal sequence finishes.
+    onDone = onDone or function() end
+    local ok = mod.world:nurseHeal(onDone)
+    if not ok then onDone() end
+  end
+
+  local function routeToStarterLab()
+    local state = challengeActive()
+    if not (state and state.starterRoutePending) then return false end
+    state.starterRoutePending = nil
+    state.awaitingStarter = true
+    saveChallenge(state)
+    if not isGold then
+      local game = mod.game
+      game.save.flags = game.save.flags or {}
+      -- Red/Blue require EVENT_FOLLOWED_OAK_INTO_LAB. Yellow additionally
+      -- reads the two selection gates below; Red/Blue never consume them.
+      -- EVENT_GOT_STARTER remains untouched for each native choice script.
+      game.save.flags.EVENT_FOLLOWED_OAK_INTO_LAB = true
+      game.save.flags.EVENT_FOLLOWED_OAK_INTO_LAB_2 = true
+      game.save.flags.EVENT_OAK_ASKED_TO_CHOOSE_MON = true
+      return mod.world:warpTo("OAKS_LAB", 5, 10, "up", { arrive="teleport" })
+    end
+    -- Gold’s native starter-ball scripts already accept an unset completion
+    -- event on a fresh save. Route to their normal lab rather than setting an
+    -- undocumented numeric story flag.
+    return mod.world:warpTo("ELMS_LAB", 4, 10, "up", { arrive="teleport" })
+  end
+
   local PRE_EVOLUTION
   local SPECIES = {}
   local function buildSpeciesIndex()
@@ -411,6 +583,154 @@ return function(mod)
     if game and game.stack then game.stack:push(TextBox.new(game, table.concat(pages, "\f"))) end
   end
 
+  -- The prompt is shared by Gen 1 and Gold Oak Speech. It changes no game
+  -- state until the player explicitly answers Yes after choosing a name.
+  mod.hooks:wrap("intro.oak_speech.build", function(next, steps, speech)
+    steps = next(steps, speech)
+    mod.ui.insertStepAfter(steps, "name_player", {
+      id="gym_challenge_opt_in", kind="yesno", pic="oak",
+      saveKey=GYM_CHALLENGE_PROMPT_KEY,
+      text="WILL YOU TAKE THE\nGYM CHALLENGE?",
+    })
+    return steps
+  end)
+
+  mod.events:on("intro.oak_speech.answered", function(event)
+    if event and event.saveKey == GYM_CHALLENGE_PROMPT_KEY then
+      mod.save:set(GYM_CHALLENGE_PROMPT_KEY, event.value == true)
+    end
+  end)
+
+  mod.events:on("intro.oak_speech.finished", function()
+    if mod.save:get(GYM_CHALLENGE_PROMPT_KEY) ~= true then return end
+    if challengeActive() then return end
+    saveChallenge({
+      enabled=true,
+      phase=isGold and "johto" or "kanto",
+      starterRoutePending=true,
+      introFinished=true,
+      completed={},
+    })
+  end)
+
+  -- Gen 1 story gifts expose the native starter before its party record is
+  -- built. Restrict the change to the accepted Gym Challenge starter in Oak's
+  -- Lab; fossils and every later story gift remain untouched.
+  mod.events:on("pokemon.before_give", function(gift)
+    local state = challengeActive()
+    local game = gift and gift.ctx and gift.ctx.game or mod.game
+    local map = game and game.world and game.world.map
+    if isGold or not (state and state.awaitingStarter and not state.starterLeveled
+      and map and map.id == "OAKS_LAB") then return end
+    gift.level = starterLevelFor(gift.species)
+    state.awaitingStarter, state.starterLeveled = false, true
+    state.pendingWarp, state.warpAfterScript = GYMS[1].id, true
+    saveChallenge(state)
+  end)
+
+  local function completeEarnedGyms(game)
+    local state = challengeActive()
+    if not state then return false end
+    local changed = false
+    for _, gym in ipairs(challengePhaseGyms(state)) do
+      if not state.completed[gym.id] and badgeOwned(game, gym) then
+        state.completed[gym.id] = true
+        changed = true
+        mod.log:info("Gym Challenge completed physical gym %s", gym.id)
+      end
+    end
+    if not changed then return false end
+
+    local nextGym = nextChallengeGym(state, game)
+    if nextGym then
+      queueGymWarp(state, nextGym)
+      state.warpAfterScript = true
+    elseif isGold and state.phase == "johto" then
+      -- The first league remains a native story segment. Champion victory later
+      -- unlocks the Kanto phase; no forced Elite Four or story warp is used.
+      state.phase = "league1"
+      state.warpAfterScript = false
+    else
+      state.phase = "complete"
+      state.warpAfterScript = false
+    end
+    saveChallenge(state)
+    return true
+  end
+
+  local function advanceChallengeAfterReward(game, overworld)
+    if not completeEarnedGyms(game) then return false end
+    local state = challengeActive()
+    if state and state.warpAfterScript then
+      state.warpAfterScript = false
+      saveChallenge(state)
+      healChallengeParty(function() warpQueuedGym() end)
+      return true
+    end
+    return true
+  end
+
+  mod.events:on("script.ended", function(event)
+    if not (event and event.completed) then return end
+    local state = challengeActive()
+    if not state then return end
+    local game = mod.game
+    if state.warpAfterScript then
+      -- The native starter/reward script has completed. Heal through the
+      -- engine command, then move to the already chosen physical gym.
+      state.warpAfterScript = false
+      saveChallenge(state)
+      healChallengeParty(function() warpQueuedGym() end)
+      return
+    end
+    advanceChallengeAfterReward(game, game and game.world)
+  end)
+
+  mod.events:on("battle.ended", function(event)
+    local state = challengeActive()
+    local battle = event and event.battle
+    if not (isGold and state and state.phase == "league1" and event.result == "win"
+      and battle and battle.trainer
+      and (battle.trainer.classId or battle.trainer.class) == "CHAMPION") then return end
+    state.championDefeated = true
+    saveChallenge(state)
+  end)
+
+  mod.events:on("map.entered", function(event)
+    local state = challengeActive()
+    if not state then return end
+    if state.introFinished and state.starterRoutePending then
+      state.introFinished = false
+      saveChallenge(state)
+      routeToStarterLab()
+      return
+    end
+    -- Gold's first Hall of Fame returns to the title screen, then the next
+    -- Continue boots in New Bark Town. Waiting for that native boot preserves
+    -- the entire induction, credits, saved post-game spawn, and story flags.
+    if isGold and state.phase == "league1" and state.championDefeated
+      and event and event.mapId == "NEW_BARK_TOWN" and event.via == "boot" then
+      state.phase, state.championDefeated = "kanto", false
+      local nextGym = nextChallengeGym(state, mod.game)
+      if nextGym then
+        queueGymWarp(state, nextGym)
+        saveChallenge(state)
+        healChallengeParty(function() warpQueuedGym() end)
+      else
+        saveChallenge(state)
+      end
+    end
+  end)
+
+  mod.events:on("screen.popped", function()
+    local state = challengeActive()
+    if state and state.introFinished and state.starterRoutePending then
+      state.introFinished = false
+      saveChallenge(state)
+      routeToStarterLab()
+    end
+  end)
+
   if isGold then
     local function paint(npc, sprite)
       local def = mod.content.sprites:get(sprite)
@@ -428,8 +748,21 @@ return function(mod)
       if handle and handle.npc then paint(handle.npc, visitor.sprite) end
     end
 
+    local GOLD_STARTER_GIFTS = {
+      ["60:40c6"]=true, ["60:4108"]=true, ["60:4144"]=true,
+    }
     local pendingGym
     mod.hooks:wrap("script.command", function(next, ctx, name, args, command)
+      local state = challengeActive()
+      if state and state.awaitingStarter and not state.starterLeveled
+        and name == "givepoke" and ctx and GOLD_STARTER_GIFTS[ctx.scriptKey] and command then
+        local rewritten = clone(command)
+        rewritten.level = starterLevelFor(rewritten.species)
+        state.awaitingStarter, state.starterLeveled = false, true
+        state.pendingWarp, state.warpAfterScript = GYMS[1].id, true
+        saveChallenge(state)
+        return next(ctx, name, args, rewritten)
+      end
       local gym = ctx and BY_SCRIPT[ctx.scriptKey]
       if not gym or not command then return next(ctx, name, args, command) end
       local plan = planForSave()
@@ -470,12 +803,99 @@ return function(mod)
     mod.events:on("screen.popped", resetActions)
   else
     local SpriteRenderer = require("src.render.SpriteRenderer")
+
+    -- Gen 1 statues are a live engine table keyed by the physical gym map.
+    -- Project only the visiting leader name; the city and physical badge stay
+    -- native. Gold has no equivalent hidden-event statue path.
+    local projectGymStatues
+    do
+      local ok, statues = pcall(require, "data.scripts.gyms")
+      if ok and type(statues) == "table" then
+        local baseNames = {}
+        for _, gym in ipairs(GYMS) do
+          baseNames[gym.mapId] = statues[gym.mapId] and statues[gym.mapId].leader
+        end
+        projectGymStatues = function(plan)
+          for _, physical in ipairs(GYMS) do
+            local visitor = plan and plan.rules and plan.rules.randomize_leaders
+              and visitorFor(physical, plan) or physical
+            local statue = statues[physical.mapId]
+            if statue then statue.leader = baseNames[visitor.mapId] or visitor.name end
+          end
+        end
+      else
+        mod.log:warn("Randomized Gym Challenge: Gen 1 gym statues unavailable")
+      end
+    end
+
     local function sourceLeaderText(gym)
       local map = mod.content.maps:get(gym.mapId)
       for _, object in ipairs(map and map.objects or {}) do
         if object.index == gym.objectIndex and object.text then return map.label, object.text end
       end
       return nil, nil
+    end
+
+    -- Build trainer records from imported map data rather than carrying a ROM
+    -- coordinate table. The source roster stays tied to the visiting leader’s
+    -- original gym; the destination record supplies the physical level curve.
+    local GYM_TRAINERS_BY_GYM, LIVE_GYM_TRAINERS = {}, {}
+    for _, physicalGym in ipairs(GYMS) do
+      local records = {}
+      local map = mod.content.maps:get(physicalGym.mapId)
+      for arrayIndex, object in ipairs(map and map.objects or {}) do
+        local objectIndex = object.index or arrayIndex
+        if objectIndex ~= physicalGym.objectIndex and object.trainerClass and object.trainerParty then
+          local trainer = mod.content.trainers:get(object.trainerClass)
+          local party = trainer and trainer.parties and trainer.parties[object.trainerParty]
+          if party and #party > 0 then
+            records[#records + 1] = {
+              key=physicalGym.id .. ":" .. tostring(objectIndex), gymId=physicalGym.id,
+              mapId=physicalGym.mapId, objectIndex=objectIndex,
+              trainerClass=object.trainerClass, trainerParty=object.trainerParty,
+              sprite=object.sprite, text=object.text, vanillaParty=clone(party),
+            }
+          end
+        end
+      end
+      GYM_TRAINERS_BY_GYM[physicalGym.id] = records
+    end
+
+    local function sourceGymTrainer(destination, plan)
+      if not (plan and plan.rules and plan.rules.randomize_leaders) then return destination end
+      local visitor = visitorFor(BY_ID[destination.gymId], plan)
+      local source = GYM_TRAINERS_BY_GYM[visitor.id] or {}
+      if #source == 0 then return destination end
+      return pick(source, "support:" .. destination.key, plan.seed) or destination
+    end
+
+    local function supportTrainerParty(destination, source, gym, plan)
+      local party, used = {}, {}
+      for index, target in ipairs(destination.vanillaParty or {}) do
+        local sourceMon = (source.vanillaParty or {})[math.min(index, #(source.vanillaParty or {}))]
+          or (source.vanillaParty or {})[1] or target
+        local level = levelFor(target.level, plan.rules, "support:" .. destination.key .. ":" .. index, plan.seed)
+        local species, changed = sourceMon.species, false
+        if plan.rules.randomize_teams then
+          local stage = plan.rules.enforce_stage and stageFor(target.species) or nil
+          local types = plan.rules.preserve_theme and gym.types or nil
+          local ordered = shuffle(eligibleSpecies(types, stage), "support:" .. destination.key .. ":species:" .. index, plan.seed)
+          species = ordered[1] or species
+          for _, candidate in ipairs(ordered) do
+            if not used[candidate] then species = candidate; break end
+          end
+          changed = species ~= sourceMon.species
+        end
+        used[species] = true
+        local entry = clone(sourceMon)
+        entry.species, entry.level = species, level
+        if changed then entry.moves, entry.item = nil, nil end
+        if plan.rules.randomize_moves then
+          entry.moves = generatedMoves(species, level, "support:" .. destination.key .. ":" .. index, plan.seed)
+        end
+        party[#party + 1] = entry
+      end
+      return party
     end
 
     local function leaderSprite(gym)
@@ -531,12 +951,76 @@ return function(mod)
       else
         mod.log:error("Randomized Gym Challenge: missing leader talk entry for %s", gym.id)
       end
+      -- The engine schedules onVictory beneath the native leader reward flow.
+      -- `advanceChallengeAfterReward` still verifies physical badge ownership,
+      -- so a normal gym-trainer victory cannot advance the challenge.
+      mod.content.map_scripts:register(gym.mapId, {
+        priority=90,
+        onVictory=function(game, overworld)
+          if challengeActive() then advanceChallengeAfterReward(game, overworld) end
+        end,
+      })
+    end
+
+    local function supportTrainerTalk(destination)
+      return function(game, overworld, npc, done)
+        done = done or function() end
+        local plan = planForSave()
+        local source = sourceGymTrainer(destination, plan)
+        local header = game and game.data and game.data.trainerHeader
+          and game.data:trainerHeader(source.mapId, source.objectIndex)
+        local text = game and game.data and game.data.text or {}
+        if npc and npc.facePlayer and overworld and overworld.player then npc:facePlayer(overworld.player) end
+        if game.save.defeatedTrainers and game.save.defeatedTrainers[npc.id] then
+          local after = header and header.after and text[header.after]
+          if after then
+            local TextBox = require("src.render.TextBox")
+            game.stack:push(TextBox.new(game, after, done))
+          else
+            done()
+          end
+          return
+        end
+        local battleText = header and header.battle and text[header.battle]
+        local wonText = header and header.won and text[header.won]
+        local function engage() overworld:engageTrainer(npc, done, wonText, battleText ~= nil) end
+        if battleText then
+          local TextBox = require("src.render.TextBox")
+          game.stack:push(TextBox.new(game, battleText, engage))
+        else
+          engage()
+        end
+      end
+    end
+
+    for _, records in pairs(GYM_TRAINERS_BY_GYM) do
+      for _, trainer in ipairs(records) do
+        if trainer.text then
+          mod.content.map_scripts:register(trainer.mapId, {
+            priority=110, talk={ [trainer.text]=supportTrainerTalk(trainer) },
+          })
+        end
+      end
+    end
+
+    local function applySupportTrainers(gym, plan)
+      for _, destination in ipairs(GYM_TRAINERS_BY_GYM[gym.id] or {}) do
+        local handle = mod.world:npc(gym.mapId, destination.objectIndex)
+        local npc = handle and handle.npc
+        if npc then
+          local source = sourceGymTrainer(destination, plan)
+          npc.def.trainerClass, npc.def.trainerParty = source.trainerClass, source.trainerParty
+          paint(npc, source.sprite or destination.sprite)
+          LIVE_GYM_TRAINERS[npc.id] = { npc=npc, gym=gym, destination=destination, source=source }
+        end
+      end
     end
 
     local function applyGen1Gym(mapId)
       local gym = BY_MAP[mapId]
       if not gym then return end
       local plan = planForSave()
+      if projectGymStatues then projectGymStatues(plan) end
       local visitor = visitorFor(gym, plan)
       local handle = mod.world:npc(mapId, gym.objectIndex)
       local npc = handle and handle.npc
@@ -545,6 +1029,7 @@ return function(mod)
       npc.def.trainerParty = visitor.partyIndex
       paint(npc, plan.rules.randomize_leaders and leaderSprite(visitor) or leaderSprite(gym))
       LIVE[npc.id] = { npc=npc, gym=gym, visitor=visitor }
+      applySupportTrainers(gym, plan)
     end
 
     local pendingGym
@@ -554,13 +1039,25 @@ return function(mod)
       if record then
         event.npc.def.trainerClass, event.npc.def.trainerParty = record.visitor.id, record.visitor.partyIndex
         pendingGym = record
+        return
+      end
+      local support = event and event.npc and LIVE_GYM_TRAINERS[event.npc.id]
+      if support then
+        event.npc.def.trainerClass, event.npc.def.trainerParty = support.source.trainerClass, support.source.trainerParty
+        pendingGym = { support=true, record=support }
       end
     end)
 
     mod.hooks:wrap("trainer.party", function(next, trainerClass, partyIndex, party)
       party = next(trainerClass, partyIndex, party)
       local pending = pendingGym
-      if pending and trainerClass == pending.visitor.id and partyIndex == pending.visitor.partyIndex then
+      if pending and pending.support then
+        local record = pending.record
+        if trainerClass == record.source.trainerClass and partyIndex == record.source.trainerParty then
+          local replacement = supportTrainerParty(record.destination, record.source, record.gym, planForSave())
+          if type(replacement) == "table" and #replacement > 0 then return clone(replacement) end
+        end
+      elseif pending and trainerClass == pending.visitor.id and partyIndex == pending.visitor.partyIndex then
         local replacement = partyForChallenge(pending.gym, planForSave())
         if type(replacement) == "table" and #replacement > 0 then return clone(replacement) end
       end
@@ -572,6 +1069,10 @@ return function(mod)
       local record = origin and LIVE[origin.npcId]
       if record then
         record.npc.def.trainerClass, record.npc.def.trainerParty = record.gym.id, record.gym.partyIndex
+      end
+      local support = origin and LIVE_GYM_TRAINERS[origin.npcId]
+      if support then
+        support.npc.def.trainerClass, support.npc.def.trainerParty = support.destination.trainerClass, support.destination.trainerParty
       end
       pendingGym = nil
     end)
@@ -586,6 +1087,8 @@ return function(mod)
   mod.hooks:wrap("save.new_game", function(next, save)
     save = next(save)
     mod.save:set("challenge_plan", nil)
+    mod.save:set(GYM_CHALLENGE_KEY, nil)
+    mod.save:set(GYM_CHALLENGE_PROMPT_KEY, nil)
     return save
   end)
 
