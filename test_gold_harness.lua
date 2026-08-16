@@ -87,9 +87,9 @@ local mon = assert(party[1], "Gold challenge did not supply a party")
 assert(mon.species == "MON_FALKNER" and mon.level == 11,
   "disabled Gold challenge rules changed base species or level")
 assert(mon.item == "BERRY" and mon.moves[1] == "TACKLE" and mon.moves[2] == "GROWL",
-  "alpha.2 failed to preserve vanilla held item or moves")
+  "legacy party-preservation check failed for vanilla held item or moves")
 assert(mon.dvs.attack == 1 and mon.form == "ORIGINAL_FORM" and mon.customFutureField.token == "FALKNER",
-  "alpha.2 failed to preserve nonstandard or future party fields")
+  "legacy party-preservation check failed for nonstandard or future party fields")
 
 -- Returned challenge parties must be deep copies; battle mutations cannot
 -- corrupt the save's generated plan or change a later encounter.
@@ -102,4 +102,4 @@ local repeatParty = callbacks.hooks["trainer.party"](function(_, _, base) return
 assert(repeatParty[1].moves[1] == "TACKLE" and repeatParty[1].customFutureField.token == "FALKNER",
   "Gold challenge plan was mutated by a previous battle")
 
-print("randomized gym challenge Gold alpha.2 sixteen-gym and party-preservation harness: valid")
+print("randomized gym challenge Gold sixteen-gym and party-preservation harness: valid")

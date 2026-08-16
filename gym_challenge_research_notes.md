@@ -14,7 +14,7 @@ The shared post-player-name anchor is `name_player`. Gold’s default Oak Speech
 
 ## Current Randomized Gym Challenge and reusable Gym Leader Shuffle patterns
 
-Randomized Gym Challenge alpha.2 already has separate Gen 1/Gold gym tables, physical-gym reward preservation, visiting leader sprite projection, Gen 1 leader pre-battle source dialogue projection, Gold intro text projection, and party substitution. It maintains a per-save `challenge_plan` and generates candidate parties by cloning source party records.
+Randomized Gym Challenge already has separate Gen 1/Gold gym tables, physical-gym reward preservation, visiting leader sprite projection, Gen 1 leader pre-battle source dialogue projection, Gold intro text projection, and party substitution. It maintains a per-save `challenge_plan` and generates candidate parties by cloning source party records.
 
 Gym Leader Shuffle’s Gen 1 leader-talk pattern retains the physical gym’s defeated-state advice, badge, TM, flags, and reward callback while using the visiting leader only for pre-battle dialogue. Its gym-trainer pattern reads the source trainer header for challenge/victory/repeat text and keeps normal trainer defeat tracking and battle timing. Its statue projection uses the Gen 1 `data.scripts.gyms` table and must not be used in Gold, where equivalent statues are not a hidden event feature.
 

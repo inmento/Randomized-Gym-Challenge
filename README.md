@@ -4,7 +4,7 @@
 
 This project is **AI-assisted**, not AI-created.
 
-> **WIP alpha:** This mod is installable and activatable for Gen 1 Recomp testing, but it should be used on a test save until cross-generation playthrough testing is complete. Alpha releases are updater-visible; they are not stable releases.
+> **Testing guidance:** This mod is installable and activatable for Gen 1 Recomp. Use a test save until cross-generation playthrough testing is complete.
 
 ## What it can randomize
 
@@ -39,7 +39,7 @@ Each physical gym’s non-battling **Gym Guide** keeps their native dialogue, th
 
 After each physical gym badge and native reward flow resolves, Gym Challenge heals the party and routes the player to the next gym. Gen 1 runs through the eight Kanto gyms, then leaves the Elite Four and Champion path entirely native. Gold runs through Johto’s eight gyms, preserves the first native Hall of Fame and credits sequence, and continues with the eight Kanto gyms only after the post-credits Continue boot in New Bark Town. It does not force league, Champion, credits, or story transitions. After the final physical gym in a phase, a passive completion message confirms the handoff without forcing the next story event.
 
-> **Do not rely on Gym Challenge for a regular playthrough yet.** This alpha feature passed static and scripted regression checks but has not received a full live playthrough in Red, Blue, Yellow, or Gold.
+> **Use a separate save for first-time Gym Challenge testing.** The feature passed static and scripted regression checks but has not received a full live playthrough in Red, Blue, Yellow, or Gold.
 
 ## Compatibility
 
@@ -49,7 +49,7 @@ The package targets **Red, Blue, Yellow, and Gold** with Mod API 2. It was stati
 
 Do **not** enable this at the same time as [Gym Leader Shuffle](https://github.com/inmento/Gym-Leader-Shuffle). Both mods change the gym-leader battle path, so this package declares a direct conflict to prevent an unsafe combination.
 
-## Installing the alpha build
+## Installing version 1.0.6
 
 Download the ZIP from the repository’s **Releases** page, extract the `randomized_gym_challenge` folder into the Gen 1 Recomp `mods` folder, then enable it for the game you are testing.
 

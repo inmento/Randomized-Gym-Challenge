@@ -1,5 +1,5 @@
 -- Randomized Gym Challenge
--- WIP 1.0.6-alpha
+-- Release 1.0.6
 -- Gen 1 Recomp mod API 2
 --
 -- This is intentionally separate from Gym Leader Shuffle.  It uses the same
@@ -157,7 +157,7 @@ return function(mod)
   -- player’s accepted challenge, earned gyms, or routing state.
   local GYM_CHALLENGE_KEY = "gym_challenge_state"
   -- `gym_challenge_opt_in` belonged to the retired intro prompt. Keep it only
-  -- so older alpha saves can be cleaned up; milestone offers use new keys.
+  -- so older pre-stable saves can be cleaned up; milestone offers use new keys.
   local GYM_CHALLENGE_PROMPT_KEY = "gym_challenge_opt_in"
   local GYM_CHALLENGE_OFFERED_KEY = "gym_challenge_offer_seen_v2"
   local GYM_CHALLENGE_PENDING_KEY = "gym_challenge_offer_pending_v2"
@@ -1385,7 +1385,7 @@ return function(mod)
   end
 
   mod.events:on("game.ready", function()
-    -- 1.0.5-alpha could activate a challenge during Oak's introduction. Clear
+    -- The prior build could activate a challenge during Oak's introduction. Clear
     -- only incomplete states from that retired flow; earned-gym progress is
     -- preserved if a player somehow progressed before installing this fix.
     local state = challengeState()
