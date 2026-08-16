@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.0-alpha.2 — WIP bug-fix pre-release
+
+This build fixes a confirmed party-construction issue in alpha.1. The generator was rebuilding each party slot with only `species` and `level`, which could discard vanilla moves, held items, and other imported party fields even when the corresponding randomization options were Off. Alpha.2 now clones the source party record first and changes only the fields selected by the player. Generated species also receive fresh moves/items only when those options are enabled.
+
+The Gold held-item option now represents no item with an omitted field rather than a false value, and the package was rechecked with Lua syntax validation, the Gen 2 compatibility checker, the repository linter, and the official packer.
+
 ## 0.1.0-alpha.1 — WIP pre-release
 
 This first public test build introduces **Randomized Gym Challenge** for Red, Blue, Yellow, and Gold.

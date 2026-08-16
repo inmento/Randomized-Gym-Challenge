@@ -1,7 +1,7 @@
 {
   "id": "randomized_gym_challenge",
   "name": "Randomized Gym Challenge",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "entry": "main.lua",
   "api": 2,
   "category": "GAMEPLAY",

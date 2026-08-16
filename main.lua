@@ -1,5 +1,5 @@
 -- Randomized Gym Challenge
--- WIP 0.1.0-alpha.1
+-- WIP 0.1.0-alpha.2
 -- Gen 1 Recomp mod API 2
 --
 -- This is intentionally separate from Gym Leader Shuffle.  It uses the same
@@ -297,28 +297,49 @@ return function(mod)
     local source = VANILLA_PARTIES[visitor.id] or physical
     local party, used = {}, {}
     for index, target in ipairs(physical) do
+      local sourceMon = source[math.min(index, #source)] or source[1] or target
+      local originalSpecies = sourceMon and sourceMon.species or target.species
       local level = levelFor(target.level, rules, gym.id .. ":" .. index, seed)
-      local species = source[math.min(index, #source)] and source[math.min(index, #source)].species or target.species
+      local species = originalSpecies
+      local speciesChanged = false
       if rules.randomize_teams then
         local stage = rules.enforce_stage and stageFor(target.species) or nil
         local types = rules.preserve_theme and gym.types or nil
         local pool = eligibleSpecies(types, stage)
         local ordered = shuffle(pool, gym.id .. ":species:" .. index, seed)
-        species = ordered[1]
+        species = ordered[1] or species
         if #ordered > 1 then
           for _, candidate in ipairs(ordered) do
             if not used[candidate] then species = candidate; break end
           end
         end
+        speciesChanged = species ~= originalSpecies
       elseif rules.enforce_stage then
         local desired = stageFor(target.species)
         local pool = eligibleSpecies(nil, desired)
-        if #pool > 0 and stageFor(species) ~= desired then species = pick(pool, gym.id .. ":stage:" .. index, seed) end
+        if #pool > 0 and stageFor(species) ~= desired then
+          local replacement = pick(pool, gym.id .. ":stage:" .. index, seed)
+          species = replacement or species
+          speciesChanged = species ~= originalSpecies
+        end
       end
       if species then used[species] = true end
-      local entry = { species=species, level=level }
-      if rules.randomize_moves then entry.moves = generatedMoves(species, level, gym.id .. ":" .. index, seed) end
-      if rules.randomize_held_items then entry.item = heldItemFor(gym.id .. ":" .. index, seed) end
+
+      -- Start from the imported trainer record. This preserves vanilla moves,
+      -- held items, and any future party fields whenever their option is off.
+      local entry = clone(sourceMon)
+      entry.species, entry.level = species, level
+      if speciesChanged then
+        entry.moves = nil
+        entry.item = nil
+      end
+      if rules.randomize_moves then
+        entry.moves = generatedMoves(species, level, gym.id .. ":" .. index, seed)
+      end
+      if rules.randomize_held_items then
+        local held = heldItemFor(gym.id .. ":" .. index, seed)
+        entry.item = held ~= false and held or nil
+      end
       party[#party + 1] = entry
     end
     return party
