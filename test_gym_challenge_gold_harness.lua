@@ -31,6 +31,7 @@ local options = {
   level_variation=3, preserve_theme=false, enforce_stage=false,
   randomize_moves=false, randomize_held_items=false,
   rebuild_action=false, challenge_log_action=false,
+  challenge_progress_action=false, challenge_hint_action=false, difficulty_preset="MANUAL",
 }
 local game
 game = {
@@ -88,7 +89,11 @@ local mod = {
 }
 
 assert(loadfile("main.lua"))()(mod)
-assert(#callbacks.schema == 10, "challenge option schema changed")
+assert(#callbacks.schema == 13, "challenge option schema changed")
+local schemaKeys = {}
+for _, row in ipairs(callbacks.schema) do schemaKeys[row.key] = true end
+assert(schemaKeys.challenge_progress_action and schemaKeys.challenge_hint_action
+  and schemaKeys.difficulty_preset, "progress, hint, and preset options are missing")
 
 -- The shared post-name prompt stores only an affirmative answer. It must be
 -- injected before an intro starts and leave the new save unmodified until the

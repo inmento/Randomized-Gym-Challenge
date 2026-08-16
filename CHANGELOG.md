@@ -1,11 +1,15 @@
 # Changelog
 
-## 1.0.3-alpha — Gym Guide Encouragement Rewards
+## 1.0.4-alpha — Crystal-Safe Challenge Controls and Progress History
 
-Gym Challenge now gives each physical gym one extra, optional encouragement reward. In Red, Blue, and Yellow, talking to the native non-battling Gym Guide first shows that guide’s normal dialogue, then provides a short challenge-specific warning and one weighted item. The reward is recorded per gym, cannot be claimed twice, never comes from a junk, key-item, HM, or TM pool, and shifts toward stronger recovery or training supplies later in the challenge.
+Added optional **Crystal 251** detection for Red, Blue, and Yellow. When Crystal 251 is active, Randomized Gym Challenge reads the merged live Pokémon, trainer, item, type, and map registries without replacing Crystal-owned story, battle, evolution, or map data. The mod remains standalone and does not require Crystal 251.
 
-Gold uses the same native Gym Guide flow whenever a live Gym Guide is present. A gym without a live guide uses a leader parting-gift fallback after the native gym reward and before the existing heal-and-warp sequence, so every Gym Challenge stop still has one safe extra reward.
+Added read-only **OPEN PROGRESS HISTORY** and **SHOW NEXT GYM HINT** actions. Progress history reports the active phase, completed and next physical gyms, Crystal status, and each Gym Guide reward already claimed. Hints identify the next physical gym without forcing a warp or changing native story progression.
 
-Release ZIP assets now omit `alpha` from their filenames for easier updater testing. The release tags and embedded manifest versions retain their explicit `1.0.x-alpha` identifiers, and the historical alpha release notes and asset names are being normalized the same way.
+Added pre-plan difficulty presets: **MANUAL**, **STORY FRIENDLY**, **CHALLENGE**, and **CHAOS**. Presets configure the existing challenge rules only while a plan is being created. Once a save has a challenge plan, changing settings does not silently reroll its teams; the explicit rebuild action remains required.
 
-This remains an **explicitly untested experimental alpha**. Use a separate test save and do not enable it together with Gym Leader Shuffle.
+Gym Guide encouragement rewards now persist their quantity as well as their item. Curated repeatable supplies can award a bounded quantity later in a challenge phase, while rare rewards remain single-item gifts. Bag-full behavior still leaves the reward unclaimed so it can be retried safely.
+
+After the final physical gym in a phase, the mod can show a passive completion acknowledgment and then leaves the native league and story path in control. It does not force the Elite Four, Champion, Hall of Fame, credits, or Gold’s post-credits Kanto handoff.
+
+Gen 1 and Gold regression harnesses, official validation, linting, Gen 2 safety checking, reproducible packaging, and archive integrity checks pass. This remains an **explicitly untested experimental alpha** and requires live testing on separate saves, especially with Crystal 251 active.

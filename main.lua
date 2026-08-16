@@ -1,5 +1,5 @@
 -- Randomized Gym Challenge
--- WIP 1.0.3-alpha
+-- WIP 1.0.4-alpha
 -- Gen 1 Recomp mod API 2
 --
 -- This is intentionally separate from Gym Leader Shuffle.  It uses the same
@@ -10,6 +10,12 @@ return function(mod)
   local GameVersion = require("src.core.GameVersion")
   local playing = GameVersion.get()
   local isGold = playing == "gold"
+  local function crystal251Active()
+    if isGold or type(mod.find) ~= "function" then return false end
+    local ok, handle = pcall(mod.find, mod, "CRYSTAL_251")
+    local exports = ok and type(handle) == "table" and handle.exports or nil
+    return type(exports) == "table" and tonumber(exports.dexSize) == 251
+  end
 
   mod.options:define({
     { key="randomize_leaders", label="RANDOMIZE GYM LEADERS", type="toggle", default=false },
@@ -22,6 +28,11 @@ return function(mod)
     { key="randomize_held_items", label="RANDOMIZE HELD ITEMS (GOLD)", type="toggle", default=false },
     { key="rebuild_action", label="REBUILD CHALLENGE (TEST)", type="toggle", default=false },
     { key="challenge_log_action", label="OPEN CHALLENGE LOG", type="toggle", default=false },
+    { key="challenge_progress_action", label="OPEN PROGRESS HISTORY", type="toggle", default=false },
+    { key="challenge_hint_action", label="SHOW NEXT GYM HINT", type="toggle", default=false },
+    { key="difficulty_preset", label="DIFFICULTY PRESET", type="choice", default="MANUAL",
+      choices={ {"MANUAL","MANUAL"}, {"STORY FRIENDLY","STORY_FRIENDLY"},
+        {"CHALLENGE","CHALLENGE"}, {"CHAOS","CHAOS"} } },
   })
 
   local function clone(value)
@@ -200,6 +211,8 @@ return function(mod)
     state.completed = state.completed or {}
     state.guideRewards = state.guideRewards or {}
     state.guideFallback = state.guideFallback or {}
+    state.guideQuantities = state.guideQuantities or {}
+
     mod.save:set(GYM_CHALLENGE_KEY, state)
     return state
   end
@@ -252,17 +265,25 @@ return function(mod)
     return entries[#entries].id
   end
 
-  local function grantGuideReward(game, itemId)
+  local function guideQuantityFor(gym, state, itemId)
+    local tier = guideRewardTier(gym, state)
+    local repeated = { POTION=true, SUPER_POTION=true, HYPER_POTION=true, FULL_HEAL=true,
+      BERRY_JUICE=true, GOLD_BERRY=true, MYSTERYBERRY=true, MIRACLEBERRY=true }
+    if repeated[itemId] and tier >= 2 then return tier == 3 and 2 or 1 end
+    return 1
+  end
+
+  local function grantGuideReward(game, itemId, quantity)
     local item = itemId and mod.content.items:get(itemId)
     if not (game and game.save and item) then return false end
     if isGold then
       local world = game.world
-      return world and world.giveItem and world:giveItem(item.index, 1) == true or false
+      return world and world.giveItem and world:giveItem(item.index, quantity or 1) == true or false
     end
     -- Bag.add mirrors native Gen 1 slot and stack limits; it is never loaded on
     -- Gold, where inventory pockets use the Gold world implementation above.
     local Bag = require("src.inventory.Bag")
-    return Bag.add(game.save, itemId, 1, game.data) == true
+    return Bag.add(game.save, itemId, quantity or 1, game.data) == true
   end
 
   local function claimGuideReward(game, gym)
@@ -271,10 +292,12 @@ return function(mod)
     if state.guideRewards and state.guideRewards[gym.id] then return state.guideRewards[gym.id], "claimed" end
     local itemId = guideRewardFor(gym, state)
     if not itemId then return nil, "unavailable" end
-    if not grantGuideReward(game, itemId) then return nil, "bag_full" end
+    local quantity = guideQuantityFor(gym, state, itemId)
+    if not grantGuideReward(game, itemId, quantity) then return nil, "bag_full" end
     state.guideRewards[gym.id] = itemId
+    state.guideQuantities[gym.id] = quantity
     saveChallenge(state)
-    return itemId, "granted"
+    return itemId, "granted", quantity
   end
 
   local function rewardItemName(itemId)
@@ -282,14 +305,25 @@ return function(mod)
     return (item and item.name) or tostring(itemId or "ITEM")
   end
 
-  local function guideEncouragementText(gym, itemId, status)
+  local function showChallengeText(game, text, done)
+    done = done or function() end
+    if isGold and game and game.world and game.world.showText then
+      game.world:showText(text, done)
+      return
+    end
+    local TextBox = require("src.render.TextBox")
+    if game and game.stack then game.stack:push(TextBox.new(game, text, done)) else done() end
+  end
+
+  local function guideEncouragementText(gym, itemId, status, quantity)
     if status == "bag_full" then
       return "THE GYM FEELS\nTOUGH TODAY.\fMAKE ROOM IN YOUR BAG\nAND TALK TO ME AGAIN!"
     end
     if status == "claimed" then
       return "THE GYM STILL LOOKS\nTOUGH.\fSTAY CAREFUL, TRAINER!"
     end
-    return "THE GYM FEELS\nTOUGH TODAY.\fBE CAREFUL, TRAINER!\fTAKE THIS WITH YOU:\n" .. rewardItemName(itemId) .. "!"
+    local count = (quantity and quantity > 1) and (" x" .. tostring(quantity)) or ""
+    return "THE GYM FEELS\nTOUGH TODAY.\fBE CAREFUL, TRAINER!\fTAKE THIS WITH YOU:\n" .. rewardItemName(itemId) .. count .. "!"
   end
 
   challengePhaseGyms = function(state)
@@ -524,7 +558,8 @@ return function(mod)
   end
 
   local function currentRules()
-    return {
+    local preset = mod.options:get("difficulty_preset") or "MANUAL"
+    local rules = {
       randomize_leaders=mod.options:get("randomize_leaders") == true,
       randomize_teams=mod.options:get("randomize_teams") == true,
       randomize_levels=mod.options:get("randomize_levels") == true,
@@ -533,7 +568,22 @@ return function(mod)
       enforce_stage=mod.options:get("enforce_stage") == true,
       randomize_moves=mod.options:get("randomize_moves") == true,
       randomize_held_items=isGold and mod.options:get("randomize_held_items") == true,
+      preset=preset,
     }
+    if preset == "STORY_FRIENDLY" then
+      rules.randomize_levels, rules.level_variation = true, 1
+    elseif preset == "CHALLENGE" then
+      rules.randomize_leaders, rules.randomize_teams, rules.randomize_levels = true, true, true
+      rules.level_variation, rules.preserve_theme, rules.enforce_stage = 3, true, true
+      rules.randomize_moves = true
+      rules.randomize_held_items = isGold
+    elseif preset == "CHAOS" then
+      rules.randomize_leaders, rules.randomize_teams, rules.randomize_levels = true, true, true
+      rules.level_variation, rules.preserve_theme, rules.enforce_stage = 8, false, false
+      rules.randomize_moves = true
+      rules.randomize_held_items = isGold
+    end
+    return rules
   end
 
   local function buildLeaderMapping(rules, seed)
@@ -642,7 +692,10 @@ return function(mod)
     return row and row.party or VANILLA_PARTIES[gym.id]
   end
 
-  local ACTIONS = { rebuild_action=true, challenge_log_action=true }
+  local ACTIONS = {
+    rebuild_action=true, challenge_log_action=true, challenge_progress_action=true,
+    challenge_hint_action=true,
+  }
   local function resetActions()
     local game = mod.game
     local stored = game and game.save and game.save.options and game.save.options.modOptions
@@ -653,6 +706,31 @@ return function(mod)
       if stored then stored[key] = false end
       if active then active[key] = false end
     end
+  end
+
+  local function openProgressHistory()
+    local game, state = mod.game, challengeActive()
+    if not state then showChallengeText(game, "NO GYM CHALLENGE\nIS ACTIVE.") return end
+    local lines = { isGold and ("GYM CHALLENGE " .. string.upper(state.phase or "JOHTO")) or "GYM CHALLENGE" }
+    lines[#lines + 1] = crystal251Active() and "CRYSTAL 251: READY" or "CRYSTAL 251: NOT ACTIVE"
+    for _, gym in ipairs(challengePhaseGyms(state)) do
+      local nextGym = nextChallengeGym(state, game)
+      local status = state.completed[gym.id] and "DONE" or (nextGym and nextGym.id == gym.id and "NEXT" or "WAIT")
+      local reward = state.guideRewards[gym.id]
+      local rewardText = reward and (rewardItemName(reward) .. " x" .. tostring(state.guideQuantities[gym.id] or 1)) or "PENDING"
+      lines[#lines + 1] = string.format("%s %s\n%s", status, gym.name, rewardText)
+    end
+    showChallengeText(game, table.concat(lines, "\f"))
+  end
+
+  local function showNextGymHint()
+    local game, state = mod.game, challengeActive()
+    local gym = state and nextChallengeGym(state, game)
+    if not gym then
+      showChallengeText(game, state and "NO MORE GYMS\nIN THIS PHASE." or "NO GYM CHALLENGE\nIS ACTIVE.")
+      return
+    end
+    showChallengeText(game, "YOUR NEXT CHALLENGE:\n" .. gym.name .. "\n" .. gym.mapId)
   end
 
   local function openLog()
@@ -745,6 +823,7 @@ return function(mod)
     else
       state.phase = "complete"
       state.warpAfterScript = false
+      state.completionNoticePending = true
     end
     saveChallenge(state)
     return completedGym
@@ -758,23 +837,25 @@ return function(mod)
       onDone()
       return
     end
-    local itemId, status = claimGuideReward(game, gym)
+    local itemId, status, quantity = claimGuideReward(game, gym)
     if status ~= "granted" then
       onDone()
       return
     end
-    local world = game and game.world
-    if world and world.showText then
-      world:showText("THE LEADER LEAVES\nA PARTING GIFT!\fTAKE THIS WITH YOU:\n" .. rewardItemName(itemId) .. "!", onDone)
-    else
-      onDone()
-    end
+    showChallengeText(game, "THE LEADER LEAVES\nA PARTING GIFT!\fTAKE THIS WITH YOU:\n"
+      .. rewardItemName(itemId) .. ((quantity and quantity > 1) and (" x" .. quantity) or "") .. "!", onDone)
   end
 
   local function advanceChallengeAfterReward(game, overworld)
     local completedGym = completeEarnedGyms(game)
     if not completedGym then return false end
     local state = challengeActive()
+    if state and state.completionNoticePending then
+      state.completionNoticePending = false
+      saveChallenge(state)
+      showChallengeText(game, "GYM CHALLENGE COMPLETE!\nALL PHYSICAL GYMS CLEARED.\fTHE NATIVE LEAGUE STORY\nREMAINS YOUR NEXT STEP.")
+      return true
+    end
     if state and state.warpAfterScript then
       local function continueRoute()
         state.warpAfterScript = false
@@ -802,16 +883,10 @@ return function(mod)
 
   local function deliverGuideReward(game, gym, done)
     done = done or function() end
-    local itemId, status = claimGuideReward(game, gym)
+    local itemId, status, quantity = claimGuideReward(game, gym)
     if status == "inactive" or status == "unavailable" then done(); return end
-    local text = guideEncouragementText(gym, itemId, status)
-    if isGold then
-      local world = game and game.world
-      if world and world.showText then world:showText(text, done) else done() end
-      return
-    end
-    local TextBox = require("src.render.TextBox")
-    if game and game.stack then game.stack:push(TextBox.new(game, text, done)) else done() end
+    local text = guideEncouragementText(gym, itemId, status, quantity)
+    showChallengeText(game, text, done)
   end
 
   mod.events:on("world.interacted", function(event)
@@ -988,6 +1063,7 @@ return function(mod)
     mod.events:on("game.ready", function(event)
       resetActions()
       local game = event and event.game or mod.game
+      if crystal251Active() then mod.log:info("Randomized Gym Challenge: Crystal 251 detected; using imported live registries") end
       if game and game.world and game.world.map then applyGoldGym(game.world.map.id) end
     end)
     mod.events:on("screen.popped", resetActions)
@@ -1269,6 +1345,7 @@ return function(mod)
     mod.events:on("game.ready", function(event)
       resetActions()
       local game = event and event.game or mod.game
+      if crystal251Active() then mod.log:info("Randomized Gym Challenge: Crystal 251 detected; using imported live registries") end
       if game and game.world and game.world.map then applyGen1Gym(game.world.map.id) end
     end)
     mod.events:on("screen.popped", resetActions)
@@ -1292,6 +1369,12 @@ return function(mod)
     elseif event.key == "challenge_log_action" and event.value then
       resetActions()
       openLog()
+    elseif event.key == "challenge_progress_action" and event.value then
+      resetActions()
+      openProgressHistory()
+    elseif event.key == "challenge_hint_action" and event.value then
+      resetActions()
+      showNextGymHint()
     elseif not ACTIONS[event.key] and mod.save:get("challenge_plan") then
       mod.log:info("Randomized Gym Challenge: a plan already exists for this save; use REBUILD CHALLENGE (TEST) after changing rules")
     end

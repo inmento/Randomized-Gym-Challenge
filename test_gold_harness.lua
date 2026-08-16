@@ -62,7 +62,7 @@ local mod = {
 }
 
 assert(loadfile("main.lua"))()(mod)
-assert(#callbacks.schema == 10, "current challenge option schema was not registered")
+assert(#callbacks.schema == 13, "current challenge option schema was not registered")
 
 -- Entering the first leader battle initializes one immutable, Gold-specific
 -- plan. With all randomization rules off, every imported party field must

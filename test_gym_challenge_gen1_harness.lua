@@ -102,7 +102,11 @@ local mod = {
 }
 
 assert(loadfile("main.lua"))()(mod)
-assert(#callbacks.schema == 10, "challenge option schema changed")
+assert(#callbacks.schema == 13, "challenge option schema changed")
+local schemaKeys = {}
+for _, row in ipairs(callbacks.schema) do schemaKeys[row.key] = true end
+assert(schemaKeys.challenge_progress_action and schemaKeys.challenge_hint_action
+  and schemaKeys.difficulty_preset, "progress, hint, and preset options are missing")
 local steps = callbacks.hooks["intro.oak_speech.build"](function(current) return current end, { { id="name_player" } }, {})
 assert(steps[2].id == "gym_challenge_opt_in", "Gym Challenge prompt is missing from Gen 1 intro")
 emit("intro.oak_speech.answered", { saveKey="gym_challenge_opt_in", value=true })
