@@ -1,7 +1,7 @@
 {
   "id": "randomized_gym_challenge",
   "name": "Randomized Gym Challenge",
-  "version": "1.0.5-alpha",
+  "version": "1.0.6-alpha",
   "entry": "main.lua",
   "api": 2,
   "category": "GAMEPLAY",
@@ -11,5 +11,5 @@
   "conflicts": ["gym_leader_shuffle"],
   "permissions": ["engine_internals"],
   "github": "inmento/Randomized-Gym-Challenge",
-  "description": "Configurable gym-battle generator with opt-in Gym Challenge progression, weighted Gym Guide rewards, progress history, hints, presets, and optional Crystal 251-safe live-data compatibility for Red, Blue, Yellow, and Gold. All gameplay-changing options start off."
+  "description": "Configurable gym-battle generator with milestone-gated Gym Challenge progression, immediate first-gym routing, weighted Gym Guide rewards, progress history, hints, presets, and optional Crystal 251-safe live-data compatibility for Red, Blue, Yellow, and Gold. All gameplay-changing options start off."
 }

@@ -4,7 +4,7 @@
 
 This project is **AI-assisted**, not AI-created.
 
-> **WIP alpha:** This mod is marked experimental. It is disabled by default after installation and should be used on a test save until cross-generation playthrough testing is complete. Its promoted alpha releases are intentionally updater-visible for Gen 1 Recomp testing; they are not stable releases.
+> **WIP alpha:** This mod is installable and activatable for Gen 1 Recomp testing, but it should be used on a test save until cross-generation playthrough testing is complete. Alpha releases are updater-visible; they are not stable releases.
 
 ## What it can randomize
 
@@ -29,7 +29,9 @@ The **OPEN PROGRESS HISTORY** action records completed physical gyms, the next g
 
 ## Gym Challenge mode — new and untested
 
-**Gym Challenge** is an optional progression mode. It is offered once after the player has chosen a name; choosing **No** leaves the normal game flow unchanged. Choosing **Yes** routes the player into the native starter lab, then uses the normal starter selection and story scripts rather than a replacement starter sequence.
+**Gym Challenge** is an optional progression mode offered once at the end of the native opening sequence. In Red, Blue, and Yellow, it appears only after the player has chosen a starter, beaten the Oak’s Lab rival, and that victory script has completed. In Gold, it appears only after the player has received a starter, returned to Elm’s Lab with the Mystery Egg, and handed that egg to Elm. Choosing **No** leaves normal game flow unchanged.
+
+Choosing **Yes** safely updates the already received native starter, fully heals the party, and immediately routes the player to the first physical gym. It does not replace either game’s native starter or early-story scripts.
 
 The selected starter is level-adjusted against the first physical gym’s highest intended level. A starter with a super-effective matchup starts two levels below that baseline, a neutral starter starts two levels above it, and a starter facing a super-effective gym type starts five levels above it. If both sides have a super-effective type relationship, the defensive-risk result is used.
 
@@ -49,7 +51,7 @@ Do **not** enable this at the same time as [Gym Leader Shuffle](https://github.c
 
 ## Installing the alpha build
 
-Download the ZIP from the repository’s **Releases** page, extract the `randomized_gym_challenge` folder into the Gen 1 Recomp `mods` folder, then enable it for the game you are testing. The experimental confirmation is expected.
+Download the ZIP from the repository’s **Releases** page, extract the `randomized_gym_challenge` folder into the Gen 1 Recomp `mods` folder, then enable it for the game you are testing.
 
 The mod contains no ROM content, extracted game data, or game assets.
 
@@ -57,6 +59,6 @@ The mod contains no ROM content, extracted game data, or game assets.
 
 Please test a new save and an existing test save separately. Confirm that the opening leader text, overworld sprite, generated party, physical-gym reward, save/reload behavior, and challenge log agree in at least an early, mid-game, and late-game gym. On Gold, also test a Johto gym and a Kanto gym, then repeat with held-item randomization enabled.
 
-For Gym Challenge, test both prompt answers, each native starter lab, the three type-adjustment outcomes, the first post-reward heal and warp, each Gym Guide’s first-talk reward and repeat talk, bounded reward quantities, a full item bag, save/reload before and after a guide reward, progress history, next-gym hints, all four presets before plan creation, Gen 1 gym-trainer dialogue and statue names, Gold guide-less fallback rewards, Gold’s native first Hall of Fame and credits sequence, and the subsequent Continue boot into the Kanto phase. If Crystal 251 is active, repeat at least one early and one late gym with imported species and trainer data.
+For Gym Challenge, verify that no prompt appears during Oak’s introduction. In Gen 1, verify the offer only appears after the Oak’s Lab rival victory completes; in Gold, verify it only appears after Elm receives the Mystery Egg. Test both prompt answers, the three type-adjustment outcomes, the immediate first-gym heal and warp, the first post-reward heal and warp, each Gym Guide’s first-talk reward and repeat talk, bounded reward quantities, a full item bag, save/reload before and after a guide reward, progress history, next-gym hints, all four presets before plan creation, Gen 1 gym-trainer dialogue and statue names, Gold guide-less fallback rewards, Gold’s native first Hall of Fame and credits sequence, and the subsequent Continue boot into the Kanto phase. If Crystal 251 is active, repeat at least one early and one late gym with imported species and trainer data.
 
 If you report an issue, include the game, gym, enabled options, whether the challenge was rebuilt, and a screenshot or log excerpt if possible.

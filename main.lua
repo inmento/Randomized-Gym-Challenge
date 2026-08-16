@@ -1,5 +1,5 @@
 -- Randomized Gym Challenge
--- WIP 1.0.5-alpha
+-- WIP 1.0.6-alpha
 -- Gen 1 Recomp mod API 2
 --
 -- This is intentionally separate from Gym Leader Shuffle.  It uses the same
@@ -156,7 +156,11 @@ return function(mod)
   -- battle plan. The plan can be rebuilt for testing without erasing a
   -- player’s accepted challenge, earned gyms, or routing state.
   local GYM_CHALLENGE_KEY = "gym_challenge_state"
+  -- `gym_challenge_opt_in` belonged to the retired intro prompt. Keep it only
+  -- so older alpha saves can be cleaned up; milestone offers use new keys.
   local GYM_CHALLENGE_PROMPT_KEY = "gym_challenge_opt_in"
+  local GYM_CHALLENGE_OFFERED_KEY = "gym_challenge_offer_seen_v2"
+  local GYM_CHALLENGE_PENDING_KEY = "gym_challenge_offer_pending_v2"
 
   local GYM_TELEPORTS = isGold and {
     FALKNER={ mapId="VIOLET_CITY", x=18, y=17 },
@@ -315,6 +319,16 @@ return function(mod)
     if game and game.stack then game.stack:push(TextBox.new(game, text, done)) else done() end
   end
 
+  local function showChallengeChoice(game, text, onChoice)
+    onChoice = onChoice or function() end
+    local TextBox = require("src.render.TextBox")
+    if game and game.stack then
+      game.stack:push(TextBox.new(game, text, nil, { choice=onChoice, defaultNo=true }))
+    else
+      onChoice(false)
+    end
+  end
+
   local function guideEncouragementText(gym, itemId, status, quantity)
     if status == "bag_full" then
       return "THE GYM FEELS\nTOUGH TODAY.\fMAKE ROOM IN YOUR BAG\nAND TALK TO ME AGAIN!"
@@ -416,27 +430,91 @@ return function(mod)
     if not ok then onDone() end
   end
 
-  local function routeToStarterLab()
-    local state = challengeActive()
-    if not (state and state.starterRoutePending) then return false end
-    state.starterRoutePending = nil
-    state.awaitingStarter = true
-    saveChallenge(state)
-    if not isGold then
-      local game = mod.game
-      game.save.flags = game.save.flags or {}
-      -- Red/Blue require EVENT_FOLLOWED_OAK_INTO_LAB. Yellow additionally
-      -- reads the two selection gates below; Red/Blue never consume them.
-      -- EVENT_GOT_STARTER remains untouched for each native choice script.
-      game.save.flags.EVENT_FOLLOWED_OAK_INTO_LAB = true
-      game.save.flags.EVENT_FOLLOWED_OAK_INTO_LAB_2 = true
-      game.save.flags.EVENT_OAK_ASKED_TO_CHOOSE_MON = true
-      return mod.world:warpTo("OAKS_LAB", 5, 10, "up", { arrive="teleport" })
+  local function expForLevel(growthRate, level)
+    if growthRate == "SLIGHTLY_FAST" then
+      return math.max(0, math.floor((3 * level ^ 3) / 4) + 10 * level ^ 2 - 30)
+    elseif growthRate == "SLIGHTLY_SLOW" then
+      return math.max(0, math.floor((3 * level ^ 3) / 4) + 20 * level ^ 2 - 70)
+    elseif growthRate == "MEDIUM_SLOW" then
+      return math.max(0, math.floor((6 * level ^ 3) / 5) - 15 * level ^ 2 + 100 * level - 140)
+    elseif growthRate == "FAST" then
+      return math.floor((4 * level ^ 3) / 5)
+    elseif growthRate == "SLOW" then
+      return math.floor((5 * level ^ 3) / 4)
     end
-    -- Gold’s native starter-ball scripts already accept an unset completion
-    -- event on a fresh save. Route to their normal lab rather than setting an
-    -- undocumented numeric story flag.
-    return mod.world:warpTo("ELMS_LAB", 4, 10, "up", { arrive="teleport" })
+    return level ^ 3
+  end
+
+  local function recalculateStarterStats(speciesDef, level, dvs, statExp)
+    local stats = {}
+    for _, key in ipairs({ "hp", "attack", "defense", "speed", "special" }) do
+      local base = (speciesDef.baseStats and speciesDef.baseStats[key]) or 1
+      local dv = (dvs and dvs[key]) or 0
+      local ev = math.floor(math.min(255, math.ceil(math.sqrt((statExp and statExp[key]) or 0))) / 4)
+      stats[key] = math.floor(((base + dv) * 2 + ev) * level / 100) + (key == "hp" and level + 10 or 5)
+    end
+    return stats
+  end
+
+  local function levelAcceptedStarter(game, state)
+    local party = game and game.save and game.save.party
+    local starter = type(party) == "table" and party[1] or nil
+    local speciesDef = starter and mod.content.pokemon:get(starter.species) or nil
+    if type(starter) ~= "table" or not speciesDef then return false end
+
+    local level = starterLevelFor(starter.species)
+    local oldMaxHp = starter.stats and starter.stats.hp or starter.hp or 1
+    local hpLost = math.max(0, oldMaxHp - (tonumber(starter.hp) or oldMaxHp))
+    starter.dvs = starter.dvs or { hp=0, attack=0, defense=0, speed=0, special=0 }
+    starter.statExp = starter.statExp or { hp=0, attack=0, defense=0, speed=0, special=0 }
+    starter.level = level
+    starter.exp = expForLevel(speciesDef.growthRate, level)
+    starter.stats = recalculateStarterStats(speciesDef, level, starter.dvs, starter.statExp)
+    starter.hp = math.max(1, starter.stats.hp - hpLost)
+    state.starterLeveled = true
+    return true
+  end
+
+  local function beginAcceptedChallenge(game)
+    if challengeActive() then return false end
+    local state = saveChallenge({
+      enabled=true,
+      phase=isGold and "johto" or "kanto",
+      completed={},
+      acceptedPostIntro=true,
+    })
+    if not levelAcceptedStarter(game, state) then
+      mod.log:warn("Gym Challenge could not locate the native starter after the milestone")
+      return false
+    end
+    local firstGym = nextChallengeGym(state, game)
+    if not queueGymWarp(state, firstGym) then return false end
+    saveChallenge(state)
+    healChallengeParty(function() warpQueuedGym() end)
+    return true
+  end
+
+  local function offerChallengeAtMilestone(game)
+    if challengeActive() or mod.save:get(GYM_CHALLENGE_OFFERED_KEY) then return false end
+    mod.save:set(GYM_CHALLENGE_OFFERED_KEY, true)
+    showChallengeChoice(game, "YOU HAVE CLEARED THE\nOPENING TRIAL!\fWILL YOU TAKE THE\nGYM CHALLENGE?", function(yes)
+      if not yes then return end
+      showChallengeText(game, "GYM CHALLENGE\nACCEPTED!\fYOUR PARTY WILL HEAL.\nGET READY FOR GYM ONE!", function()
+        beginAcceptedChallenge(game)
+      end)
+    end)
+    return true
+  end
+
+  local function postIntroMilestoneReady(game)
+    local flags = game and game.save and game.save.flags or {}
+    local map = game and game.world and game.world.map
+    local mapId = map and map.id
+    if isGold then
+      return mapId == "ELMS_LAB" and flags.EVENT_GAVE_MYSTERY_EGG_TO_ELM == true
+    end
+    return mapId == "OAKS_LAB" and mod.save:get(GYM_CHALLENGE_PENDING_KEY) == true
+      and flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB == true
   end
 
   local PRE_EVOLUTION
@@ -753,50 +831,9 @@ return function(mod)
     if game and game.stack then game.stack:push(TextBox.new(game, table.concat(pages, "\f"))) end
   end
 
-  -- The prompt is shared by Gen 1 and Gold Oak Speech. It changes no game
-  -- state until the player explicitly answers Yes after choosing a name.
-  mod.hooks:wrap("intro.oak_speech.build", function(next, steps, speech)
-    steps = next(steps, speech)
-    mod.ui.insertStepAfter(steps, "name_player", {
-      id="gym_challenge_opt_in", kind="yesno", pic="oak",
-      saveKey=GYM_CHALLENGE_PROMPT_KEY,
-      text="WILL YOU TAKE THE\nGYM CHALLENGE?",
-    })
-    return steps
-  end)
-
-  mod.events:on("intro.oak_speech.answered", function(event)
-    if event and event.saveKey == GYM_CHALLENGE_PROMPT_KEY then
-      mod.save:set(GYM_CHALLENGE_PROMPT_KEY, event.value == true)
-    end
-  end)
-
-  mod.events:on("intro.oak_speech.finished", function()
-    if mod.save:get(GYM_CHALLENGE_PROMPT_KEY) ~= true then return end
-    if challengeActive() then return end
-    saveChallenge({
-      enabled=true,
-      phase=isGold and "johto" or "kanto",
-      starterRoutePending=true,
-      introFinished=true,
-      completed={},
-    })
-  end)
-
-  -- Gen 1 story gifts expose the native starter before its party record is
-  -- built. Restrict the change to the accepted Gym Challenge starter in Oak's
-  -- Lab; fossils and every later story gift remain untouched.
-  mod.events:on("pokemon.before_give", function(gift)
-    local state = challengeActive()
-    local game = gift and gift.ctx and gift.ctx.game or mod.game
-    local map = game and game.world and game.world.map
-    if isGold or not (state and state.awaitingStarter and not state.starterLeveled
-      and map and map.id == "OAKS_LAB") then return end
-    gift.level = starterLevelFor(gift.species)
-    state.awaitingStarter, state.starterLeveled = false, true
-    state.pendingWarp, state.warpAfterScript = GYMS[1].id, true
-    saveChallenge(state)
-  end)
+  -- The challenge offer is intentionally not injected into Oak's introduction.
+  -- It is presented only after the native starter-and-rival milestone in Gen 1
+  -- or the native Mystery Egg handoff to Elm in Gold.
 
   local function completeEarnedGyms(game)
     local state = challengeActive()
@@ -899,6 +936,13 @@ return function(mod)
 
   mod.events:on("script.ended", function(event)
     if not (event and event.completed) then return end
+    local milestoneGame = mod.game
+    if postIntroMilestoneReady(milestoneGame)
+      and not challengeActive() and not mod.save:get(GYM_CHALLENGE_OFFERED_KEY) then
+      if not isGold then mod.save:set(GYM_CHALLENGE_PENDING_KEY, nil) end
+      offerChallengeAtMilestone(milestoneGame)
+      return
+    end
     if isGold and pendingGuideReward then
       local pending = pendingGuideReward
       pendingGuideReward = nil
@@ -920,9 +964,23 @@ return function(mod)
   end)
 
   mod.events:on("battle.ended", function(event)
-    local state = challengeActive()
     local battle = event and event.battle
-    if not (isGold and state and state.phase == "league1" and event.result == "win"
+    if not isGold then
+      local game = mod.game
+      local map = game and game.world and game.world.map
+      local trainer = battle and battle.trainer or {}
+      local classId = trainer.classId or trainer.class or trainer.id
+      if event and event.result == "win" and map and map.id == "OAKS_LAB"
+        and (classId == "RIVAL1" or classId == "OPP_RIVAL1" or classId == "RIVAL") then
+        -- The native exit script writes EVENT_BATTLED_RIVAL_IN_OAKS_LAB after
+        -- this event. `script.ended` below waits for that completed script.
+        mod.save:set(GYM_CHALLENGE_PENDING_KEY, true)
+      end
+      return
+    end
+
+    local state = challengeActive()
+    if not (state and state.phase == "league1" and event.result == "win"
       and battle and battle.trainer
       and (battle.trainer.classId or battle.trainer.class) == "CHAMPION") then return end
     state.championDefeated = true
@@ -932,12 +990,6 @@ return function(mod)
   mod.events:on("map.entered", function(event)
     local state = challengeActive()
     if not state then return end
-    if state.introFinished and state.starterRoutePending then
-      state.introFinished = false
-      saveChallenge(state)
-      routeToStarterLab()
-      return
-    end
     -- Gold's first Hall of Fame returns to the title screen, then the next
     -- Continue boots in New Bark Town. Waiting for that native boot preserves
     -- the entire induction, credits, saved post-game spawn, and story flags.
@@ -961,12 +1013,6 @@ return function(mod)
       pendingGuideReward = nil
       deliverGuideReward(pending.game, pending.gym)
       return
-    end
-    local state = challengeActive()
-    if state and state.introFinished and state.starterRoutePending then
-      state.introFinished = false
-      saveChallenge(state)
-      routeToStarterLab()
     end
   end)
 
@@ -1013,21 +1059,8 @@ return function(mod)
       end
     end
 
-    local GOLD_STARTER_GIFTS = {
-      ["60:40c6"]=true, ["60:4108"]=true, ["60:4144"]=true,
-    }
     local pendingGym
     mod.hooks:wrap("script.command", function(next, ctx, name, args, command)
-      local state = challengeActive()
-      if state and state.awaitingStarter and not state.starterLeveled
-        and name == "givepoke" and ctx and GOLD_STARTER_GIFTS[ctx.scriptKey] and command then
-        local rewritten = clone(command)
-        rewritten.level = starterLevelFor(rewritten.species)
-        state.awaitingStarter, state.starterLeveled = false, true
-        state.pendingWarp, state.warpAfterScript = GYMS[1].id, true
-        saveChallenge(state)
-        return next(ctx, name, args, rewritten)
-      end
       local gym = ctx and BY_SCRIPT[ctx.scriptKey]
       if not gym or not command then return next(ctx, name, args, command) end
       local plan = planForSave()
@@ -1351,11 +1384,25 @@ return function(mod)
     mod.events:on("screen.popped", resetActions)
   end
 
+  mod.events:on("game.ready", function()
+    -- 1.0.5-alpha could activate a challenge during Oak's introduction. Clear
+    -- only incomplete states from that retired flow; earned-gym progress is
+    -- preserved if a player somehow progressed before installing this fix.
+    local state = challengeState()
+    if state and not state.acceptedPostIntro and next(state.completed or {}) == nil then
+      mod.save:set(GYM_CHALLENGE_KEY, nil)
+    end
+    mod.save:set(GYM_CHALLENGE_PROMPT_KEY, nil)
+    mod.save:set(GYM_CHALLENGE_PENDING_KEY, nil)
+  end)
+
   mod.hooks:wrap("save.new_game", function(next, save)
     save = next(save)
     mod.save:set("challenge_plan", nil)
     mod.save:set(GYM_CHALLENGE_KEY, nil)
     mod.save:set(GYM_CHALLENGE_PROMPT_KEY, nil)
+    mod.save:set(GYM_CHALLENGE_OFFERED_KEY, nil)
+    mod.save:set(GYM_CHALLENGE_PENDING_KEY, nil)
     return save
   end)
 

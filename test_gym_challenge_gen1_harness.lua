@@ -15,7 +15,7 @@ package.preload["src.render.SpriteRenderer"] = function()
   return { setSpriteSheet = function() end }
 end
 package.preload["src.render.TextBox"] = function()
-  return { new=function(_, text, done) return { text=text, done=done } end }
+  return { new=function(_, text, done, opts) return { text=text, done=done, choice=opts and opts.choice } end }
 end
 package.preload["src.inventory.Bag"] = function()
   return { add=function(save, itemId)
@@ -52,12 +52,21 @@ local options = {
   randomize_moves=false, randomize_held_items=false,
   rebuild_action=false, challenge_log_action=false,
 }
-local game = {
+local game
+game = {
   data={ text={}, pokemon={}, items={}, trainerHeader=function(_, mapId, objectIndex)
     return { battle="BATTLE_" .. mapId .. objectIndex, won="WON_" .. mapId .. objectIndex, after="AFTER_" .. mapId .. objectIndex }
   end },
-  save={ options={ modOptions={} }, flags={}, inventory={}, defeatedTrainers={} },
-  stack={ push=function() end, pop=function() end },
+  save={ options={ modOptions={} }, flags={}, inventory={}, defeatedTrainers={}, party={ {
+    species="BULBASAUR", level=5, hp=20, dvs={}, statExp={}, stats={ hp=20 },
+  } } },
+  stack={
+    push=function(_, box)
+      if box.choice then game.pendingChoice=box.choice
+      elseif box.done then box.done() end
+    end,
+    pop=function() end,
+  },
   world={ map={ id="PALLET_TOWN" } },
 }
 local function emit(name, payload)
@@ -107,42 +116,27 @@ local schemaKeys = {}
 for _, row in ipairs(callbacks.schema) do schemaKeys[row.key] = true end
 assert(schemaKeys.challenge_progress_action and schemaKeys.challenge_hint_action
   and schemaKeys.difficulty_preset, "progress, hint, and preset options are missing")
-local steps = callbacks.hooks["intro.oak_speech.build"](function(current) return current end, { { id="name_player" } }, {})
-assert(steps[2].id == "gym_challenge_opt_in", "Gym Challenge prompt is missing from Gen 1 intro")
-emit("intro.oak_speech.answered", { saveKey="gym_challenge_opt_in", value=true })
-emit("intro.oak_speech.finished", {})
-emit("screen.popped", {})
-assert(game.lastWarp and game.lastWarp.mapId == "OAKS_LAB", "accepted Gen 1 Gym Challenge did not route to Oak's Lab")
-assert(game.save.flags.EVENT_FOLLOWED_OAK_INTO_LAB and not game.save.flags.EVENT_GOT_STARTER,
-  "Gym Challenge did not arm only the native Gen 1 starter gate")
+assert(not callbacks.hooks["intro.oak_speech.build"], "Gym Challenge must not alter Oak's introduction")
 
--- Brock's fixture baseline is level 10. A neutral player starter receives +2.
+-- The offer appears only after the player has a starter, defeats the native
+-- Oak's Lab rival, and the native victory script writes its completion flag.
 game.world.map={ id="OAKS_LAB" }
-local gift={ species="BULBASAUR", level=5, ctx={ game=game } }
-emit("pokemon.before_give", gift)
-assert(gift.level == 12, "neutral Gen 1 Gym Challenge starter level was not baseline plus two")
-
--- Re-arm only the private test state to exercise the other documented matchup
--- cases. The native game would create one starter; this verifies the shared
--- level calculator without changing that runtime rule.
-monTypes.SQUIRTLE, typeRows["WATER>ROCK"] = { "WATER" }, { multiplier=20 }
-storage.gym_challenge_state = { enabled=true, game="red", phase="kanto", awaitingStarter=true, completed={} }
-local advantageGift = { species="SQUIRTLE", level=5, ctx={ game=game } }
-emit("pokemon.before_give", advantageGift)
-assert(advantageGift.level == 8, "super-effective Gen 1 Gym Challenge starter was not baseline minus two")
-monTypes.BULBASAUR, typeRows["ROCK>GRASS"] = { "GRASS" }, { multiplier=20 }
-storage.gym_challenge_state = { enabled=true, game="red", phase="kanto", awaitingStarter=true, completed={} }
-local disadvantageGift = { species="BULBASAUR", level=5, ctx={ game=game } }
-emit("pokemon.before_give", disadvantageGift)
-assert(disadvantageGift.level == 15, "type-disadvantaged Gen 1 Gym Challenge starter was not baseline plus five")
-
--- Restore the neutral runtime state used by the post-starter routing checks.
-monTypes.BULBASAUR, typeRows["ROCK>GRASS"] = {}, nil
-storage.gym_challenge_state = { enabled=true, game="red", phase="kanto", starterLeveled=true, pendingWarp="OPP_BROCK", warpAfterScript=true, completed={} }
-local state = storage.gym_challenge_state
-assert(state.starterLeveled and state.pendingWarp == "OPP_BROCK", "Gen 1 native starter handoff did not queue Brock")
 emit("script.ended", { completed=true })
-assert(game.healCalls == 1 and game.lastWarp.mapId == "PEWTER_CITY", "Gen 1 starter completion did not heal and warp to Pewter")
+assert(not game.pendingChoice and not storage.gym_challenge_state,
+  "Gym Challenge offered before the Oak's Lab rival was defeated")
+emit("battle.ended", { result="win", battle={ trainer={ classId="RIVAL1" } } })
+assert(not game.pendingChoice, "Gym Challenge offered before the native rival script completed")
+game.save.flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB = true
+emit("script.ended", { completed=true })
+assert(game.pendingChoice and not storage.gym_challenge_state,
+  "Gen 1 Gym Challenge offer did not wait for the completed Oak's Lab rival battle")
+game.pendingChoice(true)
+local state = assert(storage.gym_challenge_state, "accepted Gen 1 Gym Challenge did not create state")
+assert(state.acceptedPostIntro and state.starterLeveled and state.pendingWarp == nil,
+  "accepted Gen 1 challenge did not finalize its starter state")
+assert(game.save.party[1].level == 12, "neutral Gen 1 starter was not raised to the first-gym baseline")
+assert(game.healCalls == 1 and game.lastWarp and game.lastWarp.mapId == "PEWTER_CITY",
+  "accepted Gen 1 Gym Challenge did not heal and warp to Pewter")
 
 -- A non-battling Gym Guide keeps its native talk first, then grants one
 -- deterministic, non-junk encouragement item. A full bag leaves the reward

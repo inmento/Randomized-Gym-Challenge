@@ -3,6 +3,9 @@ local callbacks, storage, trainers, maps, npcs = { hooks = {}, events = {} }, {}
 package.preload["src.core.GameVersion"] = function()
   return { get = function() return "gold" end }
 end
+package.preload["src.render.TextBox"] = function()
+  return { new=function(_, text, done, opts) return { text=text, done=done, choice=opts and opts.choice } end }
+end
 local leaders = {
   { id="FALKNER", map="VIOLET_GYM", class=1 }, { id="BUGSY", map="AZALEA_GYM", class=3 },
   { id="WHITNEY", map="GOLDENROD_GYM", class=2 }, { id="MORTY", map="ECRUTEAK_GYM", class=4 },
@@ -36,8 +39,16 @@ local options = {
 local game
 game = {
   data = { pokemon = {}, items = {}, gen2Maps = {} },
-  save = { options = { modOptions = {} }, player = { badges = {}, kantoBadges = {} }, inventory={} },
-  stack = { push=function() end, pop=function() end },
+  save = { options = { modOptions = {} }, flags={}, player = { badges = {}, kantoBadges = {} }, inventory={}, party={ {
+    species="CHIKORITA", level=5, hp=20, dvs={}, statExp={}, stats={ hp=20 },
+  } } },
+  stack = {
+    push=function(_, box)
+      if box.choice then game.pendingChoice=box.choice
+      elseif box.done then box.done() end
+    end,
+    pop=function() end,
+  },
   world = {
     map={ id="NEW_BARK_TOWN" },
     giveItem=function(_, index)
@@ -95,33 +106,26 @@ for _, row in ipairs(callbacks.schema) do schemaKeys[row.key] = true end
 assert(schemaKeys.challenge_progress_action and schemaKeys.challenge_hint_action
   and schemaKeys.difficulty_preset, "progress, hint, and preset options are missing")
 
--- The shared post-name prompt stores only an affirmative answer. It must be
--- injected before an intro starts and leave the new save unmodified until the
--- intro actually finishes.
-local steps = callbacks.hooks["intro.oak_speech.build"](function(current) return current end, { { id="name_player" } }, {})
-assert(steps[2].id == "gym_challenge_opt_in" and steps[2].kind == "yesno", "Gym Challenge prompt was not inserted after player naming")
-emit("intro.oak_speech.answered", { saveKey="gym_challenge_opt_in", value=true })
-emit("intro.oak_speech.finished", {})
-local state = assert(storage.gym_challenge_state, "accepted Gym Challenge did not create per-save state")
-assert(state.phase == "johto" and state.starterRoutePending, "Gold challenge did not begin in the Johto starter phase")
+assert(not callbacks.hooks["intro.oak_speech.build"], "Gym Challenge must not alter Gold's introduction")
 
--- The first map event routes to native Elm’s Lab. No undocumented Gold event
--- flag is written; the actual starter script remains responsible for completion.
-emit("map.entered", { mapId="NEW_BARK_TOWN", via="boot" })
-assert(game.lastWarp and game.lastWarp.mapId == "ELMS_LAB", "accepted Gold Gym Challenge did not route to Elm's Lab")
-state = storage.gym_challenge_state
-assert(state.awaitingStarter and not state.starterLeveled, "native Gold starter state was not armed")
-
--- Falkner's highest vanilla level is 11 in this fixture. A neutral starter is
--- therefore set to 13, then native script completion heals and warps to Violet.
-local given
-callbacks.hooks["script.command"](function(_, _, _, command) given=command; return command end,
-  { scriptKey="60:40c6" }, "givepoke", {}, { species="CHIKORITA", level=5 })
-assert(given and given.level == 13, "neutral Gym Challenge starter level was not first-gym baseline plus two")
-state = storage.gym_challenge_state
-assert(state.starterLeveled and state.pendingWarp == "FALKNER", "Gold starter handoff did not queue the first gym")
+-- Gold receives the offer only after the player has their starter, returns to
+-- Elm's Lab, and completes the native Mystery Egg handoff to Elm.
+game.world.map={ id="ELMS_LAB" }
+game.save.flags.EVENT_GOT_A_POKEMON_FROM_ELM = true
 emit("script.ended", { completed=true })
-assert(game.healCalls == 1 and game.lastWarp.mapId == "VIOLET_CITY", "starter completion did not heal and warp to the first gym")
+assert(not game.pendingChoice and not storage.gym_challenge_state,
+  "Gold Gym Challenge offered before the Mystery Egg was handed to Elm")
+game.save.flags.EVENT_GAVE_MYSTERY_EGG_TO_ELM = true
+emit("script.ended", { completed=true })
+assert(game.pendingChoice and not storage.gym_challenge_state,
+  "Gold Gym Challenge did not offer after the Mystery Egg handoff to Elm")
+game.pendingChoice(true)
+local state = assert(storage.gym_challenge_state, "accepted Gold Gym Challenge did not create per-save state")
+assert(state.phase == "johto" and state.acceptedPostIntro and state.starterLeveled,
+  "Gold challenge did not begin after the completed Elm milestone")
+assert(game.save.party[1].level == 13, "neutral Gold starter was not raised to the first-gym baseline")
+assert(game.healCalls == 1 and game.lastWarp and game.lastWarp.mapId == "VIOLET_CITY",
+  "accepted Gold Gym Challenge did not heal and warp to Violet City")
 
 -- Falkner's live non-battling Gym Guide grants one weighted encouragement item
 -- after the native guide script ends. It is never granted twice.
