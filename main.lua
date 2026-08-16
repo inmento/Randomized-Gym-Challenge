@@ -1,5 +1,5 @@
 -- Randomized Gym Challenge
--- WIP 1.0.4-alpha
+-- WIP 1.0.5-alpha
 -- Gen 1 Recomp mod API 2
 --
 -- This is intentionally separate from Gym Leader Shuffle.  It uses the same
