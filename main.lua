@@ -1,5 +1,5 @@
 -- Randomized Gym Challenge
--- WIP 0.1.0-alpha.2
+-- WIP 1.0.3-alpha
 -- Gen 1 Recomp mod API 2
 --
 -- This is intentionally separate from Gym Leader Shuffle.  It uses the same
@@ -192,15 +192,107 @@ return function(mod)
     return state and state.enabled == true and state.game == playing and state or nil
   end
 
+  local challengePhaseGyms, planForSave
+
   local function saveChallenge(state)
     state.version = 1
     state.game = playing
     state.completed = state.completed or {}
+    state.guideRewards = state.guideRewards or {}
+    state.guideFallback = state.guideFallback or {}
     mod.save:set(GYM_CHALLENGE_KEY, state)
     return state
   end
 
-  local function challengePhaseGyms(state)
+  -- Gym Challenge encouragement rewards are deliberately curated rather than
+  -- drawn from the entire item table. They never use key items, HMs, TMs, or
+  -- low-value filler; the later a physical gym sits in its challenge phase,
+  -- the more weight moves toward recovery and premium training supplies.
+  local GUIDE_REWARD_WEIGHTS = isGold and {
+    { id="POTION", weights={18,5,1} }, { id="SUPER_POTION", weights={14,14,5} },
+    { id="HYPER_POTION", weights={3,14,14} }, { id="FULL_RESTORE", weights={0,2,8} },
+    { id="FULL_HEAL", weights={5,7,8} }, { id="REVIVE", weights={3,8,10} },
+    { id="MAX_REVIVE", weights={0,1,3} }, { id="ETHER", weights={2,5,7} },
+    { id="ELIXIR", weights={0,2,5} }, { id="RARE_CANDY", weights={0,1,3} },
+    { id="BERRY_JUICE", weights={8,4,1} }, { id="GOLD_BERRY", weights={3,7,8} },
+    { id="MYSTERYBERRY", weights={2,4,5} }, { id="MIRACLEBERRY", weights={1,3,4} },
+    { id="HP_UP", weights={0,2,3} }, { id="PROTEIN", weights={0,2,3} },
+    { id="IRON", weights={0,2,3} }, { id="CARBOS", weights={0,2,3} },
+    { id="CALCIUM", weights={0,2,3} },
+  } or {
+    { id="POTION", weights={18,5,1} }, { id="SUPER_POTION", weights={14,14,5} },
+    { id="HYPER_POTION", weights={3,14,14} }, { id="FULL_RESTORE", weights={0,2,8} },
+    { id="FULL_HEAL", weights={5,7,8} }, { id="REVIVE", weights={3,8,10} },
+    { id="MAX_REVIVE", weights={0,1,3} }, { id="ETHER", weights={2,5,7} },
+    { id="ELIXIR", weights={0,2,5} }, { id="RARE_CANDY", weights={0,1,3} },
+  }
+
+  local function guideRewardTier(gym, state)
+    local phase = challengePhaseGyms(state)
+    for index, row in ipairs(phase) do
+      if row.id == gym.id then return math.min(3, math.floor((index - 1) * 3 / #phase) + 1) end
+    end
+    return 1
+  end
+
+  local function guideRewardFor(gym, state)
+    local tier, total, entries = guideRewardTier(gym, state), 0, {}
+    for _, row in ipairs(GUIDE_REWARD_WEIGHTS) do
+      local item = mod.content.items:get(row.id)
+      local weight = tonumber(row.weights[tier]) or 0
+      if item and weight > 0 then
+        total = total + weight
+        entries[#entries + 1] = { id=row.id, limit=total }
+      end
+    end
+    if total == 0 then return nil end
+    local plan = planForSave()
+    local roll = (hash("gym-guide-reward:" .. gym.id, plan.seed) % total) + 1
+    for _, entry in ipairs(entries) do if roll <= entry.limit then return entry.id end end
+    return entries[#entries].id
+  end
+
+  local function grantGuideReward(game, itemId)
+    local item = itemId and mod.content.items:get(itemId)
+    if not (game and game.save and item) then return false end
+    if isGold then
+      local world = game.world
+      return world and world.giveItem and world:giveItem(item.index, 1) == true or false
+    end
+    -- Bag.add mirrors native Gen 1 slot and stack limits; it is never loaded on
+    -- Gold, where inventory pockets use the Gold world implementation above.
+    local Bag = require("src.inventory.Bag")
+    return Bag.add(game.save, itemId, 1, game.data) == true
+  end
+
+  local function claimGuideReward(game, gym)
+    local state = challengeActive()
+    if not (state and gym) then return nil, "inactive" end
+    if state.guideRewards and state.guideRewards[gym.id] then return state.guideRewards[gym.id], "claimed" end
+    local itemId = guideRewardFor(gym, state)
+    if not itemId then return nil, "unavailable" end
+    if not grantGuideReward(game, itemId) then return nil, "bag_full" end
+    state.guideRewards[gym.id] = itemId
+    saveChallenge(state)
+    return itemId, "granted"
+  end
+
+  local function rewardItemName(itemId)
+    local item = itemId and mod.content.items:get(itemId)
+    return (item and item.name) or tostring(itemId or "ITEM")
+  end
+
+  local function guideEncouragementText(gym, itemId, status)
+    if status == "bag_full" then
+      return "THE GYM FEELS\nTOUGH TODAY.\fMAKE ROOM IN YOUR BAG\nAND TALK TO ME AGAIN!"
+    end
+    if status == "claimed" then
+      return "THE GYM STILL LOOKS\nTOUGH.\fSTAY CAREFUL, TRAINER!"
+    end
+    return "THE GYM FEELS\nTOUGH TODAY.\fBE CAREFUL, TRAINER!\fTAKE THIS WITH YOU:\n" .. rewardItemName(itemId) .. "!"
+  end
+
+  challengePhaseGyms = function(state)
     if not isGold then return GYMS end
     local out, startAt, endAt = {}, state and state.phase == "kanto" and 9 or 1,
       state and state.phase == "kanto" and 16 or 8
@@ -532,7 +624,7 @@ return function(mod)
     return plan
   end
 
-  local function planForSave()
+  planForSave = function()
     local plan = mod.save:get("challenge_plan")
     if type(plan) ~= "table" or type(plan.gyms) ~= "table" or plan.game ~= playing then
       return buildPlan()
@@ -631,15 +723,15 @@ return function(mod)
   local function completeEarnedGyms(game)
     local state = challengeActive()
     if not state then return false end
-    local changed = false
+    local completedGym
     for _, gym in ipairs(challengePhaseGyms(state)) do
       if not state.completed[gym.id] and badgeOwned(game, gym) then
         state.completed[gym.id] = true
-        changed = true
+        completedGym = gym
         mod.log:info("Gym Challenge completed physical gym %s", gym.id)
       end
     end
-    if not changed then return false end
+    if not completedGym then return false end
 
     local nextGym = nextChallengeGym(state, game)
     if nextGym then
@@ -655,23 +747,89 @@ return function(mod)
       state.warpAfterScript = false
     end
     saveChallenge(state)
-    return true
+    return completedGym
+  end
+
+  local function offerGoldLeaderFallback(game, gym, onDone)
+    onDone = onDone or function() end
+    local state = challengeActive()
+    if not (isGold and state and state.guideFallback and state.guideFallback[gym.id]
+      and not (state.guideRewards and state.guideRewards[gym.id])) then
+      onDone()
+      return
+    end
+    local itemId, status = claimGuideReward(game, gym)
+    if status ~= "granted" then
+      onDone()
+      return
+    end
+    local world = game and game.world
+    if world and world.showText then
+      world:showText("THE LEADER LEAVES\nA PARTING GIFT!\fTAKE THIS WITH YOU:\n" .. rewardItemName(itemId) .. "!", onDone)
+    else
+      onDone()
+    end
   end
 
   local function advanceChallengeAfterReward(game, overworld)
-    if not completeEarnedGyms(game) then return false end
+    local completedGym = completeEarnedGyms(game)
+    if not completedGym then return false end
     local state = challengeActive()
     if state and state.warpAfterScript then
-      state.warpAfterScript = false
-      saveChallenge(state)
-      healChallengeParty(function() warpQueuedGym() end)
+      local function continueRoute()
+        state.warpAfterScript = false
+        saveChallenge(state)
+        healChallengeParty(function() warpQueuedGym() end)
+      end
+      if isGold then offerGoldLeaderFallback(game, completedGym, continueRoute) else continueRoute() end
       return true
     end
     return true
   end
 
+  -- The guide is identified from the live interaction target rather than a
+  -- coordinate table. Native Gym Guide dialogue runs first; the extra
+  -- encouragement box is shown only after that native interaction completes.
+  local pendingGuideReward
+  local function guideForInteraction(event)
+    local gym = event and BY_MAP[event.mapId]
+    local npc = event and event.kind == "npc" and event.target
+    local def = npc and npc.def
+    if not (gym and def and def.index ~= gym.objectIndex and def.sprite == "SPRITE_GYM_GUIDE") then return nil end
+    if def.trainer or def.trainerClass then return nil end
+    return gym
+  end
+
+  local function deliverGuideReward(game, gym, done)
+    done = done or function() end
+    local itemId, status = claimGuideReward(game, gym)
+    if status == "inactive" or status == "unavailable" then done(); return end
+    local text = guideEncouragementText(gym, itemId, status)
+    if isGold then
+      local world = game and game.world
+      if world and world.showText then world:showText(text, done) else done() end
+      return
+    end
+    local TextBox = require("src.render.TextBox")
+    if game and game.stack then game.stack:push(TextBox.new(game, text, done)) else done() end
+  end
+
+  mod.events:on("world.interacted", function(event)
+    local state = challengeActive()
+    local gym = state and guideForInteraction(event)
+    if gym and not (state.guideRewards and state.guideRewards[gym.id]) then
+      pendingGuideReward = { gym=gym, game=mod.game }
+    end
+  end)
+
   mod.events:on("script.ended", function(event)
     if not (event and event.completed) then return end
+    if isGold and pendingGuideReward then
+      local pending = pendingGuideReward
+      pendingGuideReward = nil
+      deliverGuideReward(pending.game, pending.gym)
+      return
+    end
     local state = challengeActive()
     if not state then return end
     local game = mod.game
@@ -723,6 +881,12 @@ return function(mod)
   end)
 
   mod.events:on("screen.popped", function()
+    if not isGold and pendingGuideReward then
+      local pending = pendingGuideReward
+      pendingGuideReward = nil
+      deliverGuideReward(pending.game, pending.gym)
+      return
+    end
     local state = challengeActive()
     if state and state.introFinished and state.starterRoutePending then
       state.introFinished = false
@@ -739,6 +903,19 @@ return function(mod)
       if npc.setSpriteDef then npc:setSpriteDef(def) end
     end
 
+    local GOLD_GUIDE_OBJECTS = {}
+    for _, gym in ipairs(GYMS) do
+      local map = mod.content.maps:get(gym.mapId)
+      for arrayIndex, object in ipairs(map and map.objects or {}) do
+        local objectIndex = object.index or arrayIndex
+        if objectIndex ~= gym.objectIndex and object.sprite == "SPRITE_GYM_GUIDE"
+          and not object.trainer and not object.trainerClass then
+          GOLD_GUIDE_OBJECTS[gym.id] = { mapId=gym.mapId, objectIndex=objectIndex }
+          break
+        end
+      end
+    end
+
     local function applyGoldGym(mapId)
       local gym = BY_MAP[mapId]
       if not gym then return end
@@ -746,6 +923,19 @@ return function(mod)
       local visitor = visitorFor(gym, plan)
       local handle = mod.world:npc(mapId, gym.objectIndex)
       if handle and handle.npc then paint(handle.npc, visitor.sprite) end
+
+      -- Most Gold gyms expose a native Gym Guide. Seafoam and any future map
+      -- without a live guide use the post-leader fallback instead, so every
+      -- Gym Challenge stop still offers exactly one encouragement reward.
+      local state = challengeActive()
+      if state and not (state.guideRewards and state.guideRewards[gym.id]) then
+        local guide = GOLD_GUIDE_OBJECTS[gym.id]
+        local guideHandle = guide and mod.world:npc(guide.mapId, guide.objectIndex)
+        if not (guideHandle and guideHandle.npc) then
+          state.guideFallback[gym.id] = true
+          saveChallenge(state)
+        end
+      end
     end
 
     local GOLD_STARTER_GIFTS = {

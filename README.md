@@ -4,7 +4,7 @@
 
 This project is **AI-assisted**, not AI-created.
 
-> **WIP pre-release:** This mod is marked experimental. It is disabled by default after installation and should be used on a test save until cross-generation playthrough testing is complete.
+> **WIP alpha:** This mod is marked experimental. It is disabled by default after installation and should be used on a test save until cross-generation playthrough testing is complete. Its promoted alpha releases are intentionally updater-visible for Gen 1 Recomp testing; they are not stable releases.
 
 ## What it can randomize
 
@@ -28,6 +28,8 @@ The challenge plan is saved under this mod’s own save data. A configuration ch
 
 The selected starter is level-adjusted against the first physical gym’s highest intended level. A starter with a super-effective matchup starts two levels below that baseline, a neutral starter starts two levels above it, and a starter facing a super-effective gym type starts five levels above it. If both sides have a super-effective type relationship, the defensive-risk result is used.
 
+Each physical gym’s non-battling **Gym Guide** keeps their native dialogue, then offers one weighted encouragement item when spoken to during an active Gym Challenge. Rewards are saved per gym, use a curated no-junk pool, and lean toward stronger recovery or training supplies later in a phase. Gold uses its native Gym Guide where one is present; if a gym has no live guide, its leader provides the same one-time parting gift after the native reward and before routing onward.
+
 After each physical gym badge and native reward flow resolves, Gym Challenge heals the party and routes the player to the next gym. Gen 1 runs through the eight Kanto gyms, then leaves the Elite Four and Champion path entirely native. Gold runs through Johto’s eight gyms, preserves the first native Hall of Fame and credits sequence, and continues with the eight Kanto gyms only after the post-credits Continue boot in New Bark Town. It does not force league, Champion, credits, or story transitions.
 
 > **Do not rely on Gym Challenge for a regular playthrough yet.** This alpha feature passed static and scripted regression checks but has not received a full live playthrough in Red, Blue, Yellow, or Gold.
@@ -38,7 +40,7 @@ The package targets **Red, Blue, Yellow, and Gold** with Mod API 2. It was stati
 
 Do **not** enable this at the same time as [Gym Leader Shuffle](https://github.com/inmento/Gym-Leader-Shuffle). Both mods change the gym-leader battle path, so this package declares a direct conflict to prevent an unsafe combination.
 
-## Installing the pre-release
+## Installing the alpha build
 
 Download the ZIP from the repository’s **Releases** page, extract the `randomized_gym_challenge` folder into the Gen 1 Recomp `mods` folder, then enable it for the game you are testing. The experimental confirmation is expected.
 
@@ -48,6 +50,6 @@ The mod contains no ROM content, extracted game data, or game assets.
 
 Please test a new save and an existing test save separately. Confirm that the opening leader text, overworld sprite, generated party, physical-gym reward, save/reload behavior, and challenge log agree in at least an early, mid-game, and late-game gym. On Gold, also test a Johto gym and a Kanto gym, then repeat with held-item randomization enabled.
 
-For Gym Challenge, test both prompt answers, each native starter lab, the three type-adjustment outcomes, the first post-reward heal and warp, a bag-full TM retry, save/reload before and after a reward, Gen 1 gym-trainer dialogue and statue names, Gold’s native first Hall of Fame and credits sequence, and the subsequent Continue boot into the Kanto phase.
+For Gym Challenge, test both prompt answers, each native starter lab, the three type-adjustment outcomes, the first post-reward heal and warp, each Gym Guide’s first-talk reward and repeat talk, a full item bag, save/reload before and after a guide reward, Gen 1 gym-trainer dialogue and statue names, Gold guide-less fallback rewards, Gold’s native first Hall of Fame and credits sequence, and the subsequent Continue boot into the Kanto phase.
 
 If you report an issue, include the game, gym, enabled options, whether the challenge was rebuilt, and a screenshot or log excerpt if possible.

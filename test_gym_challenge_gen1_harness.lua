@@ -14,6 +14,16 @@ end
 package.preload["src.render.SpriteRenderer"] = function()
   return { setSpriteSheet = function() end }
 end
+package.preload["src.render.TextBox"] = function()
+  return { new=function(_, text, done) return { text=text, done=done } end }
+end
+package.preload["src.inventory.Bag"] = function()
+  return { add=function(save, itemId)
+    if save.blockGuideBag then return false end
+    save.inventory[itemId] = (save.inventory[itemId] or 0) + 1
+    return true
+  end }
+end
 
 local gyms = {
   { id="OPP_BROCK", map="PEWTER_GYM", party=1 }, { id="OPP_MISTY", map="CERULEAN_GYM", party=1 },
@@ -27,9 +37,11 @@ for index, gym in ipairs(gyms) do
   maps[gym.map] = { label=gym.map, objects={
     { index=1, sprite="SPRITE_" .. gym.id, text="LEADER_" .. gym.id },
     { index=2, sprite="SPRITE_TRAINER", text="TRAINER_" .. gym.id, trainerClass="NPC_" .. gym.id, trainerParty=1 },
+    { index=3, sprite="SPRITE_GYM_GUIDE", text="GUIDE_" .. gym.id },
   } }
   npcs[gym.map .. ":1"] = { id="leader:" .. gym.map, def={}, facePlayer=function() end }
   npcs[gym.map .. ":2"] = { id="trainer:" .. gym.map, def={}, facePlayer=function() end }
+  npcs[gym.map .. ":3"] = { id="guide:" .. gym.map, def={ index=3, sprite="SPRITE_GYM_GUIDE" }, facePlayer=function() end }
 end
 
 local typeRows, monTypes = {}, {}
@@ -59,7 +71,10 @@ local mod = {
     trainers={ get=function(_, id) return trainers[id] end, each=function() return pairs(trainers) end },
     maps={ get=function(_, id) return maps[id] end },
     pokemon={ get=function(_, id) return { evolutions={}, types=monTypes[id] or {} } end, each=function() return pairs({}) end },
-    items={ each=function() return pairs({}) end },
+    items={
+      get=function(_, id) return { id=id, name=id, index=1 } end,
+      each=function() return pairs({}) end,
+    },
     sprites={ get=function(_, id) return { id=id } end },
     type_chart={ get=function(_, id) return typeRows[id] end },
     map_scripts={ register=function(_, mapId, row)
@@ -125,6 +140,29 @@ assert(state.starterLeveled and state.pendingWarp == "OPP_BROCK", "Gen 1 native 
 emit("script.ended", { completed=true })
 assert(game.healCalls == 1 and game.lastWarp.mapId == "PEWTER_CITY", "Gen 1 starter completion did not heal and warp to Pewter")
 
+-- A non-battling Gym Guide keeps its native talk first, then grants one
+-- deterministic, non-junk encouragement item. A full bag leaves the reward
+-- unclaimed so the player may retry that guide later.
+local brockGuide = npcs["PEWTER_GYM:3"]
+emit("world.interacted", { mapId="PEWTER_GYM", kind="npc", target=brockGuide })
+emit("screen.popped", {})
+state = storage.gym_challenge_state
+local brockReward = assert(state.guideRewards.OPP_BROCK, "Gen 1 Gym Guide did not grant an encouragement reward")
+assert(game.save.inventory[brockReward] == 1, "Gen 1 Gym Guide reward did not use safe bag insertion")
+emit("world.interacted", { mapId="PEWTER_GYM", kind="npc", target=brockGuide })
+emit("screen.popped", {})
+assert(game.save.inventory[brockReward] == 1, "Gen 1 Gym Guide reward was granted more than once")
+
+game.save.blockGuideBag = true
+local mistyGuide = npcs["CERULEAN_GYM:3"]
+emit("world.interacted", { mapId="CERULEAN_GYM", kind="npc", target=mistyGuide })
+emit("screen.popped", {})
+assert(not storage.gym_challenge_state.guideRewards.OPP_MISTY, "full Gen 1 bag incorrectly consumed a Gym Guide reward")
+game.save.blockGuideBag = false
+emit("world.interacted", { mapId="CERULEAN_GYM", kind="npc", target=mistyGuide })
+emit("screen.popped", {})
+assert(storage.gym_challenge_state.guideRewards.OPP_MISTY, "Gen 1 Gym Guide reward could not be retried after bag-full")
+
 -- The physical badge appears only after the native gym reward. The registered
 -- onVictory callback then heals and routes to Cerulean; unrelated trainer wins
 -- leave state unchanged because no physical badge is present.
@@ -138,4 +176,4 @@ state = storage.gym_challenge_state
 assert(state.completed.OPP_BROCK and game.lastWarp.mapId == "CERULEAN_CITY" and game.healCalls == 2,
   "Gen 1 physical gym reward did not advance, heal, and route to Misty")
 
-print("randomized gym challenge Gen 1 Gym Challenge prompt, starter, and post-reward routing harness: valid")
+print("randomized gym challenge Gen 1 Gym Challenge prompt, guide rewards, starter, and post-reward routing harness: valid")

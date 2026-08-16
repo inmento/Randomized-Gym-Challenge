@@ -19,6 +19,10 @@ for index, leader in ipairs(leaders) do
     species = "MON_" .. leader.id, level = 10 + index, moves = { "TACKLE" },
   } } } }
   maps[leader.map] = { objects = { { index = objectIndex, sprite = "SPRITE_" .. leader.id } } }
+  if leader.id == "FALKNER" then
+    table.insert(maps[leader.map].objects, { index=2, sprite="SPRITE_GYM_GUIDE", scriptKey="56:41bc" })
+    npcs[leader.map .. ":2"] = { def={ index=2, sprite="SPRITE_GYM_GUIDE" } }
+  end
   npcs[leader.map .. ":" .. objectIndex] = { def = {} }
 end
 
@@ -28,10 +32,21 @@ local options = {
   randomize_moves=false, randomize_held_items=false,
   rebuild_action=false, challenge_log_action=false,
 }
-local game = {
+local game
+game = {
   data = { pokemon = {}, items = {}, gen2Maps = {} },
-  save = { options = { modOptions = {} }, player = { badges = {}, kantoBadges = {} } },
+  save = { options = { modOptions = {} }, player = { badges = {}, kantoBadges = {} }, inventory={} },
   stack = { push=function() end, pop=function() end },
+  world = {
+    map={ id="NEW_BARK_TOWN" },
+    giveItem=function(_, index)
+      if game and game.save.blockGuideBag then return false end
+      local id = "ITEM_" .. tostring(index)
+      game.save.inventory[id] = (game.save.inventory[id] or 0) + 1
+      return true
+    end,
+    showText=function(_, _, done) if done then done() end end,
+  },
 }
 local function emit(name, payload)
   for _, fn in ipairs(callbacks.events[name] or {}) do fn(payload) end
@@ -47,7 +62,10 @@ local mod = {
     trainers={ get=function(_, id) return trainers[id] end, each=function() return pairs(trainers) end },
     maps={ get=function(_, id) return maps[id] end },
     pokemon={ get=function(_, id) return { evolutions={}, types={} } end, each=function() return pairs({}) end },
-    items={ each=function() return pairs({}) end },
+    items={
+      get=function(_, id) return { id=id, name=id, index=7 } end,
+      each=function() return pairs({}) end,
+    },
     sprites={ get=function(_, id) return { id=id } end },
     type_chart={ get=function() return nil end },
   },
@@ -100,12 +118,34 @@ assert(state.starterLeveled and state.pendingWarp == "FALKNER", "Gold starter ha
 emit("script.ended", { completed=true })
 assert(game.healCalls == 1 and game.lastWarp.mapId == "VIOLET_CITY", "starter completion did not heal and warp to the first gym")
 
+-- Falkner's live non-battling Gym Guide grants one weighted encouragement item
+-- after the native guide script ends. It is never granted twice.
+emit("map.entered", { mapId="VIOLET_GYM", via="warp" })
+local falknerGuide = npcs["VIOLET_GYM:2"]
+emit("world.interacted", { mapId="VIOLET_GYM", kind="npc", target=falknerGuide })
+emit("script.ended", { completed=true })
+state = storage.gym_challenge_state
+local falknerReward = assert(state.guideRewards.FALKNER, "Gold Gym Guide did not grant its encouragement reward")
+assert(game.save.inventory.ITEM_7 == 1, "Gold Gym Guide reward did not use Gold item insertion")
+emit("world.interacted", { mapId="VIOLET_GYM", kind="npc", target=falknerGuide })
+emit("script.ended", { completed=true })
+assert(game.save.inventory.ITEM_7 == 1, "Gold Gym Guide reward was granted more than once")
+
 -- A physical badge becomes visible only after native reward resolution. The
 -- next completed script therefore advances from Falkner to Bugsy, not on battle start.
 game.save.player.badges.ZEPHYR = true
 emit("script.ended", { completed=true })
 state = storage.gym_challenge_state
 assert(state.completed.FALKNER and game.lastWarp.mapId == "AZALEA_TOWN", "post-reward Gold gym progression did not move to Bugsy")
+
+-- Bugsy's fixture has no Gym Guide object, so the leader fallback grants the
+-- same kind of reward before the existing heal-and-warp flow proceeds.
+emit("map.entered", { mapId="AZALEA_GYM", via="warp" })
+game.save.player.badges.HIVE = true
+emit("script.ended", { completed=true })
+state = storage.gym_challenge_state
+assert(state.guideFallback.BUGSY and state.guideRewards.BUGSY, "Gold guide-less gym did not use the leader fallback reward")
+assert(game.save.inventory.ITEM_7 == 2 and game.lastWarp.mapId == "GOLDENROD_CITY", "Gold leader fallback did not award before routing onward")
 
 -- The first Champion win remains entirely native through induction and credits.
 -- Kanto routing occurs only on the saved post-credits Continue boot in New Bark.
@@ -119,4 +159,4 @@ emit("map.entered", { mapId="NEW_BARK_TOWN", via="boot" })
 state = storage.gym_challenge_state
 assert(state.phase == "kanto" and game.lastWarp.mapId == "PEWTER_CITY", "post-credits Continue did not begin the Gold Kanto gym phase")
 
-print("randomized gym challenge Gold Gym Challenge opt-in, starter, reward, and Kanto-handoff harness: valid")
+print("randomized gym challenge Gold Gym Challenge opt-in, guide rewards, starter, and Kanto-handoff harness: valid")

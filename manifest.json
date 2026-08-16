@@ -1,7 +1,7 @@
 {
   "id": "randomized_gym_challenge",
   "name": "Randomized Gym Challenge",
-  "version": "1.0.2-alpha",
+  "version": "1.0.3-alpha",
   "entry": "main.lua",
   "api": 2,
   "category": "GAMEPLAY",
@@ -12,5 +12,5 @@
   "conflicts": ["gym_leader_shuffle"],
   "permissions": ["engine_internals"],
   "github": "inmento/Randomized-Gym-Challenge",
-  "description": "Experimental configurable gym-battle generator and optional Gym Challenge mode for Red, Blue, Yellow, and Gold. All gameplay-changing options start off."
+  "description": "Experimental configurable gym-battle generator with opt-in Gym Challenge progression and weighted Gym Guide rewards for Red, Blue, Yellow, and Gold. All gameplay-changing options start off."
 }
