@@ -62,6 +62,7 @@ game = {
   } } },
   stack={
     push=function(_, box)
+      game.lastText = box.text
       if box.choice then game.pendingChoice=box.choice
       elseif box.done then box.done() end
     end,
@@ -100,6 +101,7 @@ local mod = {
       return true
     end,
     warpTo=function(_, mapId, x, y, facing, opts)
+      if game.failWarp then return false, "TEST WARP FAILURE" end
       game.lastWarp={ mapId=mapId, x=x, y=y, facing=facing, opts=opts }
       game.world.map={ id=mapId }
       return true
@@ -111,11 +113,12 @@ local mod = {
 }
 
 assert(loadfile("main.lua"))()(mod)
-assert(#callbacks.schema == 13, "challenge option schema changed")
+assert(#callbacks.schema == 14, "challenge option schema changed")
 local schemaKeys = {}
 for _, row in ipairs(callbacks.schema) do schemaKeys[row.key] = true end
 assert(schemaKeys.challenge_progress_action and schemaKeys.challenge_hint_action
-  and schemaKeys.difficulty_preset, "progress, hint, and preset options are missing")
+  and schemaKeys.abandon_challenge_action and schemaKeys.difficulty_preset,
+  "progress, hint, abandon, and preset options are missing")
 assert(not callbacks.hooks["intro.oak_speech.build"], "Gym Challenge must not alter Oak's introduction")
 
 -- The offer appears only after the player has a starter, defeats the native
@@ -137,6 +140,11 @@ assert(state.acceptedPostIntro and state.starterLeveled and state.pendingWarp ==
 assert(game.save.party[1].level == 12, "neutral Gen 1 starter was not raised to the first-gym baseline")
 assert(game.healCalls == 1 and game.lastWarp and game.lastWarp.mapId == "PEWTER_CITY",
   "accepted Gen 1 Gym Challenge did not heal and warp to Pewter")
+assert(state.lastRoute and state.lastRoute.status == "WARPED" and state.lastRoute.gym == "OPP_BROCK",
+  "accepted Gen 1 Gym Challenge did not record its first-gym route status")
+assert(game.lastText and game.lastText:find("FIRST GYM: BROCK", 1, true)
+  and game.lastText:find("PRESET: MANUAL", 1, true),
+  "accepted Gen 1 Gym Challenge did not display its reproducible start summary")
 
 -- A non-battling Gym Guide keeps its native talk first, then grants one
 -- deterministic, non-junk encouragement item. A full bag leaves the reward
@@ -174,4 +182,32 @@ state = storage.gym_challenge_state
 assert(state.completed.OPP_BROCK and game.lastWarp.mapId == "CERULEAN_CITY" and game.healCalls == 2,
   "Gen 1 physical gym reward did not advance, heal, and route to Misty")
 
-print("randomized gym challenge Gen 1 Gym Challenge prompt, guide rewards, starter, and post-reward routing harness: valid")
+-- A failed engine warp must never advance native story state or lose the next
+-- destination. The challenge pauses with a diagnostic until the player checks
+-- status or abandons it deliberately.
+game.failWarp = true
+game.save.inventory.CASCADEBADGE = true
+for _, row in ipairs(mapScripts.CERULEAN_GYM or {}) do if row.onVictory then row.onVictory(game, game.world) end end
+state = storage.gym_challenge_state
+assert(state.completed.OPP_MISTY and state.pendingWarp == "OPP_LT_SURGE"
+  and state.lastRoute and state.lastRoute.status == "PAUSED",
+  "failed Gen 1 route did not preserve a paused diagnostic state")
+assert(game.lastWarp.mapId == "CERULEAN_CITY", "failed Gen 1 route changed the player destination")
+game.failWarp = false
+
+-- Abandoning is confirmation-gated and clears only Gym Challenge state plus
+-- its generated plan; native badges, party, and inventory remain untouched.
+local savedBadge, savedLevel, savedReward = game.save.inventory.BOULDERBADGE, game.save.party[1].level, game.save.inventory[brockReward]
+emit("mod.options_changed", { mod=mod.id, key="abandon_challenge_action", value=true })
+assert(game.pendingChoice, "abandon action did not request confirmation")
+game.pendingChoice(false)
+assert(storage.gym_challenge_state, "declining abandon incorrectly cleared challenge state")
+emit("mod.options_changed", { mod=mod.id, key="abandon_challenge_action", value=true })
+game.pendingChoice(true)
+assert(not storage.gym_challenge_state and not storage.challenge_plan,
+  "confirmed abandon did not clear only challenge-owned save state")
+assert(game.save.inventory.BOULDERBADGE == savedBadge and game.save.party[1].level == savedLevel
+  and game.save.inventory[brockReward] == savedReward,
+  "abandon altered native progress, party, or inventory")
+
+print("randomized gym challenge Gen 1 hardening, routing, and recovery harness: valid")

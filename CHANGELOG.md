@@ -1,13 +1,11 @@
 # Changelog
 
-## 1.0.6 — Corrected Challenge Start and First-Gym Routing
+## 1.1.0 — Gym Challenge Release Hardening
 
-Gym Challenge is no longer offered during Oak’s introduction.
+Added **ABANDON GYM CHALLENGE**, a confirmation-gated per-save recovery action. Confirming it clears only this mod’s active Gym Challenge state and generated plan; native badges, story flags, party records, and inventory remain untouched.
 
-In Red, Blue, and Yellow, the offer now appears only after the player has chosen a starter, defeated the native Oak’s Lab rival, and that victory script has completed. In Gold, the offer now appears only after the player has received a starter, returned to Elm’s Lab with the Mystery Egg, and handed the egg to Elm.
+Gym Challenge routing now records its queued, completed, or paused state. Before a warp, the mod verifies that a valid destination exists. A failed or invalid warp preserves the pending next gym and pauses safely instead of forcing progression. **OPEN PROGRESS HISTORY** and **SHOW NEXT GYM HINT** now expose the route target and a readable status reason.
 
-Accepting the offer safely updates the already received starter to the challenge’s first-gym level, recalculates its experience and stats, heals the party, and immediately teleports the player to the first physical gym. This replaces the incorrect pre-starter lab routing and eliminates the missing initial gym warp.
+Accepting Gym Challenge now shows a start summary before the first heal and warp. The summary identifies the first gym, persisted difficulty preset, and enabled challenge rules so a tester can reproduce the run.
 
-The milestone offer is one-time only and no longer intercepts unrelated completed scripts after it has been handled. Incomplete challenge states created by the retired intro flow are cleared safely on load; existing progress with completed gyms is retained.
-
-Version labels, release tags, archive names, and the updater feed now use the same stable `1.0.6` identifier. Gen 1 and Gold milestone, routing, reward, and regression harnesses pass, along with official validation, linting, and Gen 2 safety checks. Use a separate save for first-time Gym Challenge testing, and do not enable it together with Gym Leader Shuffle.
+The Gen 1 and Gold regression harnesses now cover first-gym route status, safe failed-warp handling, confirmation-gated abandonment, and native-record preservation. Do not enable this together with Gym Leader Shuffle.

@@ -1,5 +1,5 @@
 -- Randomized Gym Challenge
--- Release 1.0.6
+-- Release 1.1.0
 -- Gen 1 Recomp mod API 2
 --
 -- This is intentionally separate from Gym Leader Shuffle.  It uses the same
@@ -30,6 +30,7 @@ return function(mod)
     { key="challenge_log_action", label="OPEN CHALLENGE LOG", type="toggle", default=false },
     { key="challenge_progress_action", label="OPEN PROGRESS HISTORY", type="toggle", default=false },
     { key="challenge_hint_action", label="SHOW NEXT GYM HINT", type="toggle", default=false },
+    { key="abandon_challenge_action", label="ABANDON GYM CHALLENGE", type="toggle", default=false },
     { key="difficulty_preset", label="DIFFICULTY PRESET", type="choice", default="MANUAL",
       choices={ {"MANUAL","MANUAL"}, {"STORY FRIENDLY","STORY_FRIENDLY"},
         {"CHALLENGE","CHALLENGE"}, {"CHAOS","CHAOS"} } },
@@ -398,9 +399,24 @@ return function(mod)
     return nil
   end
 
+  local function setRouteStatus(state, status, gym, reason)
+    if not state then return end
+    state.lastRoute = {
+      status=status,
+      gym=gym and gym.id or nil,
+      reason=reason,
+      phase=state.phase,
+    }
+  end
+
   local function queueGymWarp(state, gym)
-    if not (state and gym and GYM_TELEPORTS[gym.id]) then return false end
+    if not state then return false end
+    if not (gym and GYM_TELEPORTS[gym.id]) then
+      setRouteStatus(state, "PAUSED", gym, "NO VALID NEXT GYM DESTINATION")
+      return false
+    end
     state.pendingWarp = gym.id
+    setRouteStatus(state, "QUEUED", gym, "WAITING FOR NATIVE SCRIPT")
     return true
   end
 
@@ -408,16 +424,26 @@ return function(mod)
     local state = challengeActive()
     local gym = state and state.pendingWarp and BY_ID[state.pendingWarp]
     local target = gym and GYM_TELEPORTS[gym.id]
-    if not target then return false end
+    if not target then
+      if state then
+        state.pendingWarp = nil
+        setRouteStatus(state, "PAUSED", gym, "NO VALID NEXT GYM DESTINATION")
+        saveChallenge(state)
+      end
+      return false
+    end
     state.pendingWarp = nil
     saveChallenge(state)
     local ok, err = mod.world:warpTo(target.mapId, target.x, target.y, "up", { arrive="teleport" })
     if not ok then
       state.pendingWarp = gym.id
+      setRouteStatus(state, "PAUSED", gym, "WARP FAILED")
       saveChallenge(state)
       mod.log:warn("Gym Challenge warp failed for %s: %s", gym.id, tostring(err))
       return false
     end
+    setRouteStatus(state, "WARPED", gym, "ARRIVED AT NEXT GYM")
+    saveChallenge(state)
     return true
   end
 
@@ -475,6 +501,25 @@ return function(mod)
     return true
   end
 
+  local function activeRuleNames(rules)
+    local names = {}
+    local labels = {
+      randomize_leaders="LEADERS", randomize_teams="TEAMS", randomize_levels="LEVELS",
+      preserve_theme="THEMES", enforce_stage="STAGES", randomize_moves="MOVES",
+      randomize_held_items="ITEMS",
+    }
+    for key, label in pairs(labels) do if rules and rules[key] then names[#names + 1] = label end end
+    table.sort(names)
+    return #names > 0 and table.concat(names, ", ") or "VANILLA RULES"
+  end
+
+  local function challengeStartSummary(state, firstGym)
+    local rules = planForSave().rules or {}
+    return "GYM CHALLENGE READY!\fFIRST GYM: " .. tostring(firstGym and firstGym.name or "UNKNOWN")
+      .. "\nPRESET: " .. tostring(rules.preset or "MANUAL")
+      .. "\nRULES: " .. activeRuleNames(rules)
+  end
+
   local function beginAcceptedChallenge(game)
     if challengeActive() then return false end
     local state = saveChallenge({
@@ -484,14 +529,18 @@ return function(mod)
       acceptedPostIntro=true,
     })
     if not levelAcceptedStarter(game, state) then
+      setRouteStatus(state, "PAUSED", nil, "NATIVE STARTER NOT READY")
+      saveChallenge(state)
       mod.log:warn("Gym Challenge could not locate the native starter after the milestone")
-      return false
+      return false, state
     end
     local firstGym = nextChallengeGym(state, game)
-    if not queueGymWarp(state, firstGym) then return false end
+    if not queueGymWarp(state, firstGym) then
+      saveChallenge(state)
+      return false, state, firstGym
+    end
     saveChallenge(state)
-    healChallengeParty(function() warpQueuedGym() end)
-    return true
+    return true, state, firstGym
   end
 
   local function offerChallengeAtMilestone(game)
@@ -499,8 +548,15 @@ return function(mod)
     mod.save:set(GYM_CHALLENGE_OFFERED_KEY, true)
     showChallengeChoice(game, "YOU HAVE CLEARED THE\nOPENING TRIAL!\fWILL YOU TAKE THE\nGYM CHALLENGE?", function(yes)
       if not yes then return end
-      showChallengeText(game, "GYM CHALLENGE\nACCEPTED!\fYOUR PARTY WILL HEAL.\nGET READY FOR GYM ONE!", function()
-        beginAcceptedChallenge(game)
+      showChallengeText(game, "GYM CHALLENGE\nACCEPTED!", function()
+        local started, state, firstGym = beginAcceptedChallenge(game)
+        if not started then
+          showChallengeText(game, "CHALLENGE ROUTING\nIS PAUSED.\fOPEN PROGRESS HISTORY\nFOR THE STATUS.")
+          return
+        end
+        showChallengeText(game, challengeStartSummary(state, firstGym), function()
+          healChallengeParty(function() warpQueuedGym() end)
+        end)
       end)
     end)
     return true
@@ -772,8 +828,9 @@ return function(mod)
 
   local ACTIONS = {
     rebuild_action=true, challenge_log_action=true, challenge_progress_action=true,
-    challenge_hint_action=true,
+    challenge_hint_action=true, abandon_challenge_action=true,
   }
+  local pendingGuideReward
   local function resetActions()
     local game = mod.game
     local stored = game and game.save and game.save.options and game.save.options.modOptions
@@ -786,11 +843,34 @@ return function(mod)
     end
   end
 
+  local function abandonChallenge()
+    local game, state = mod.game, challengeActive()
+    if not state then
+      showChallengeText(game, "NO GYM CHALLENGE\nIS ACTIVE.")
+      return
+    end
+    showChallengeChoice(game, "ABANDON THIS GYM\nCHALLENGE SAVE?\fNATIVE BADGES, STORY,\nPARTY, AND ITEMS STAY.", function(yes)
+      if not yes then
+        showChallengeText(game, "GYM CHALLENGE\nCONTINUES.")
+        return
+      end
+      pendingGuideReward = nil
+      mod.save:set(GYM_CHALLENGE_KEY, nil)
+      mod.save:set("challenge_plan", nil)
+      mod.log:info("Randomized Gym Challenge: active challenge and generated plan cleared by player")
+      showChallengeText(game, "GYM CHALLENGE\nABANDONED.\fNATIVE GAME FLOW\nCONTINUES.")
+    end)
+  end
+
   local function openProgressHistory()
     local game, state = mod.game, challengeActive()
     if not state then showChallengeText(game, "NO GYM CHALLENGE\nIS ACTIVE.") return end
     local lines = { isGold and ("GYM CHALLENGE " .. string.upper(state.phase or "JOHTO")) or "GYM CHALLENGE" }
     lines[#lines + 1] = crystal251Active() and "CRYSTAL 251: READY" or "CRYSTAL 251: NOT ACTIVE"
+    local last = state.lastRoute or {}
+    local routeTarget = last.gym and ((BY_ID[last.gym] and BY_ID[last.gym].name) or last.gym) or "NONE"
+    lines[#lines + 1] = "ROUTE: " .. tostring(last.status or "IDLE") .. "\nTARGET: " .. routeTarget
+    if last.reason then lines[#lines + 1] = "STATUS: " .. tostring(last.reason) end
     for _, gym in ipairs(challengePhaseGyms(state)) do
       local nextGym = nextChallengeGym(state, game)
       local status = state.completed[gym.id] and "DONE" or (nextGym and nextGym.id == gym.id and "NEXT" or "WAIT")
@@ -808,7 +888,9 @@ return function(mod)
       showChallengeText(game, state and "NO MORE GYMS\nIN THIS PHASE." or "NO GYM CHALLENGE\nIS ACTIVE.")
       return
     end
-    showChallengeText(game, "YOUR NEXT CHALLENGE:\n" .. gym.name .. "\n" .. gym.mapId)
+    local last = state.lastRoute or {}
+    local suffix = last.status == "PAUSED" and ("\fROUTING PAUSED:\n" .. tostring(last.reason or "CHECK PROGRESS HISTORY")) or ""
+    showChallengeText(game, "YOUR NEXT CHALLENGE:\n" .. gym.name .. "\n" .. gym.mapId .. suffix)
   end
 
   local function openLog()
@@ -850,8 +932,10 @@ return function(mod)
 
     local nextGym = nextChallengeGym(state, game)
     if nextGym then
-      queueGymWarp(state, nextGym)
-      state.warpAfterScript = true
+      state.warpAfterScript = queueGymWarp(state, nextGym)
+      if not state.warpAfterScript then
+        mod.log:warn("Gym Challenge routing paused after %s because no valid next destination exists", completedGym.id)
+      end
     elseif isGold and state.phase == "johto" then
       -- The first league remains a native story segment. Champion victory later
       -- unlocks the Kanto phase; no forced Elite Four or story warp is used.
@@ -908,7 +992,7 @@ return function(mod)
   -- The guide is identified from the live interaction target rather than a
   -- coordinate table. Native Gym Guide dialogue runs first; the extra
   -- encouragement box is shown only after that native interaction completes.
-  local pendingGuideReward
+  pendingGuideReward = nil
   local function guideForInteraction(event)
     local gym = event and BY_MAP[event.mapId]
     local npc = event and event.kind == "npc" and event.target
@@ -997,11 +1081,11 @@ return function(mod)
       and event and event.mapId == "NEW_BARK_TOWN" and event.via == "boot" then
       state.phase, state.championDefeated = "kanto", false
       local nextGym = nextChallengeGym(state, mod.game)
-      if nextGym then
-        queueGymWarp(state, nextGym)
+      if nextGym and queueGymWarp(state, nextGym) then
         saveChallenge(state)
         healChallengeParty(function() warpQueuedGym() end)
       else
+        if nextGym then mod.log:warn("Gym Challenge Kanto routing paused because no valid destination exists") end
         saveChallenge(state)
       end
     end
@@ -1422,6 +1506,9 @@ return function(mod)
     elseif event.key == "challenge_hint_action" and event.value then
       resetActions()
       showNextGymHint()
+    elseif event.key == "abandon_challenge_action" and event.value then
+      resetActions()
+      abandonChallenge()
     elseif not ACTIONS[event.key] and mod.save:get("challenge_plan") then
       mod.log:info("Randomized Gym Challenge: a plan already exists for this save; use REBUILD CHALLENGE (TEST) after changing rules")
     end
