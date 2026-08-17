@@ -1,11 +1,11 @@
 # Changelog
 
-## 1.1.0 — Gym Challenge Release Hardening
+## 1.1.1 — Gold Continue Checkpoint and Two-League Progression
 
-Added **ABANDON GYM CHALLENGE**, a confirmation-gated per-save recovery action. Confirming it clears only this mod’s active Gym Challenge state and generated plan; native badges, story flags, party records, and inventory remain untouched.
+Gold Gym Challenge now turns its teleport routing off after the first eight gyms and the native first Elite Four, Champion, Hall of Fame, and credits sequence. The mod no longer sends the player directly into Kanto on the first post-credits boot.
 
-Gym Challenge routing now records its queued, completed, or paused state. Before a warp, the mod verifies that a valid destination exists. A failed or invalid warp preserves the pending next gym and pauses safely instead of forcing progression. **OPEN PROGRESS HISTORY** and **SHOW NEXT GYM HINT** now expose the route target and a readable status reason.
+When the player chooses Continue and returns to New Bark Town, the mod asks whether to continue the Gym Challenge in Kanto. Choosing **No** leaves the native post-game route alone. Choosing **Yes** reactivates routing, heals the party, and sends the player to the next physical gym.
 
-Accepting Gym Challenge now shows a start summary before the first heal and warp. The summary identifies the first gym, persisted difficulty preset, and enabled challenge rules so a tester can reproduce the run.
+The second phase covers Kanto gyms 9–16. After the eighth Kanto badge, routing stops again and the player proceeds naturally through the second Elite Four and Champion. The second Champion victory marks the Gym Challenge complete and permanently disables challenge teleports for that save.
 
-The Gen 1 and Gold regression harnesses now cover first-gym route status, safe failed-warp handling, confirmation-gated abandonment, and native-record preservation. Do not enable this together with Gym Leader Shuffle.
+The Gold regression harness now covers the Continue prompt, Yes-gated Kanto warp, second-league handoff, final Champion completion, and preservation of the recovery controls.

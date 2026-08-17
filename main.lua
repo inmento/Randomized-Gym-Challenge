@@ -1,5 +1,5 @@
 -- Randomized Gym Challenge
--- Release 1.1.0
+-- Release 1.1.1
 -- Gen 1 Recomp mod API 2
 --
 -- This is intentionally separate from Gym Leader Shuffle.  It uses the same
@@ -938,12 +938,20 @@ return function(mod)
       end
     elseif isGold and state.phase == "johto" then
       -- The first league remains a native story segment. Champion victory later
-      -- unlocks the Kanto phase; no forced Elite Four or story warp is used.
+      -- unlocks the post-credits Continue checkpoint; no Kanto warp occurs yet.
       state.phase = "league1"
       state.warpAfterScript = false
+      state.teleportEnabled = false
+    elseif isGold and state.phase == "kanto" then
+      -- The second league is also native. After the final Kanto gym, the player
+      -- continues naturally to the second Elite Four and Champion.
+      state.phase = "league2"
+      state.warpAfterScript = false
+      state.teleportEnabled = false
     else
       state.phase = "complete"
       state.warpAfterScript = false
+      state.teleportEnabled = false
       state.completionNoticePending = true
     end
     saveChallenge(state)
@@ -977,7 +985,7 @@ return function(mod)
       showChallengeText(game, "GYM CHALLENGE COMPLETE!\nALL PHYSICAL GYMS CLEARED.\fTHE NATIVE LEAGUE STORY\nREMAINS YOUR NEXT STEP.")
       return true
     end
-    if state and state.warpAfterScript then
+    if state and state.warpAfterScript and state.teleportEnabled ~= false then
       local function continueRoute()
         state.warpAfterScript = false
         saveChallenge(state)
@@ -1064,30 +1072,54 @@ return function(mod)
     end
 
     local state = challengeActive()
-    if not (state and state.phase == "league1" and event.result == "win"
-      and battle and battle.trainer
+    if not (state and (state.phase == "league1" or state.phase == "league2")
+      and event.result == "win" and battle and battle.trainer
       and (battle.trainer.classId or battle.trainer.class) == "CHAMPION") then return end
     state.championDefeated = true
+    state.teleportEnabled = false
+    if state.phase == "league2" then
+      state.phase = "complete"
+      state.completionNoticePending = true
+    end
     saveChallenge(state)
   end)
 
   mod.events:on("map.entered", function(event)
     local state = challengeActive()
     if not state then return end
-    -- Gold's first Hall of Fame returns to the title screen, then the next
-    -- Continue boots in New Bark Town. Waiting for that native boot preserves
-    -- the entire induction, credits, saved post-game spawn, and story flags.
+    -- Gold's first Hall of Fame returns to the title screen. The next Continue
+    -- must preserve the native post-game spawn and ask before restarting Gym
+    -- Challenge routing for Kanto.
     if isGold and state.phase == "league1" and state.championDefeated
       and event and event.mapId == "NEW_BARK_TOWN" and event.via == "boot" then
-      state.phase, state.championDefeated = "kanto", false
-      local nextGym = nextChallengeGym(state, mod.game)
-      if nextGym and queueGymWarp(state, nextGym) then
-        saveChallenge(state)
-        healChallengeParty(function() warpQueuedGym() end)
-      else
-        if nextGym then mod.log:warn("Gym Challenge Kanto routing paused because no valid destination exists") end
-        saveChallenge(state)
-      end
+      state.championDefeated = false
+      state.teleportEnabled = false
+      state.phase = "awaiting_kanto_opt_in"
+      saveChallenge(state)
+      showChallengeChoice(mod.game,
+        "THE FIRST LEAGUE IS\nCOMPLETE.\fCONTINUE THE GYM\nCHALLENGE IN KANTO?",
+        function(yes)
+          if not yes then
+            showChallengeText(mod.game, "KANTO CHALLENGE\nNOT STARTED.\fYOU CAN CONTINUE\nNATIVELY.")
+            saveChallenge(state)
+            return
+          end
+          state.phase = "kanto"
+          state.teleportEnabled = true
+          local nextGym = nextChallengeGym(state, mod.game)
+          if nextGym and queueGymWarp(state, nextGym) then
+            saveChallenge(state)
+            showChallengeText(mod.game, "KANTO CHALLENGE\nACCEPTED!\fTHE NEXT GYM\nIS AHEAD.", function()
+              healChallengeParty(function() warpQueuedGym() end)
+            end)
+          else
+            state.phase = "awaiting_kanto_opt_in"
+            state.teleportEnabled = false
+            setRouteStatus(state, "PAUSED", nextGym, "NO VALID KANTO DESTINATION")
+            saveChallenge(state)
+            showChallengeText(mod.game, "KANTO ROUTING\nIS PAUSED.\fOPEN PROGRESS HISTORY\nFOR THE STATUS.")
+          end
+        end)
     end
   end)
 

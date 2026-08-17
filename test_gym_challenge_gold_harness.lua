@@ -187,8 +187,25 @@ emit("map.entered", { mapId="HALL_OF_FAME", via="warp" })
 state = storage.gym_challenge_state
 assert(state.phase == "league1" and state.championDefeated, "Gold Kanto phase started before the native Hall of Fame sequence completed")
 emit("map.entered", { mapId="NEW_BARK_TOWN", via="boot" })
+assert(game.pendingChoice, "post-credits Continue did not ask whether to resume the Gold Gym Challenge")
+game.pendingChoice(true)
 state = storage.gym_challenge_state
-assert(state.phase == "kanto" and game.lastWarp.mapId == "PEWTER_CITY", "post-credits Continue did not begin the Gold Kanto gym phase")
+assert(state.phase == "kanto" and game.lastWarp.mapId == "PEWTER_CITY", "post-credits Continue did not begin the Gold Kanto gym phase after confirmation")
+
+-- Clearing the remaining eight Kanto badges transitions to a second native
+-- league without forcing an Elite Four warp. The second Champion win completes
+-- the challenge and permanently disables challenge teleports.
+local kantoBadges = { BOULDER=true, CASCADE=true, THUNDER=true, RAINBOW=true,
+  SOUL=true, MARSH=true, VOLCANO=true, EARTH=true }
+for badge in pairs(kantoBadges) do game.save.player.kantoBadges[badge] = true end
+emit("script.ended", { completed=true })
+state = storage.gym_challenge_state
+assert(state.phase == "league2" and state.teleportEnabled == false,
+  "the remaining eight Gold gyms did not hand off to the second native league")
+emit("battle.ended", { result="win", battle={ trainer={ classId="CHAMPION" } } })
+state = storage.gym_challenge_state
+assert(state.phase == "complete" and state.completionNoticePending and state.teleportEnabled == false,
+  "the second Gold Champion victory did not complete the challenge safely")
 
 -- Confirmation-gated abandon clears only challenge-owned state. Native badge,
 -- starter, and inventory records survive unchanged.
