@@ -1,11 +1,9 @@
 # Changelog
 
-## 1.1.1 — Gold Continue Checkpoint and Two-League Progression
+## 1.1.2 — Release metadata and clean package maintenance
 
-Gold Gym Challenge now turns its teleport routing off after the first eight gyms and the native first Elite Four, Champion, Hall of Fame, and credits sequence. The mod no longer sends the player directly into Kanto on the first post-credits boot.
+Randomized Gym Challenge now declares its tested **Gen1Recomp API 2** compatibility floor (`>=0.1.99`) in the manifest, allowing the launcher and mod indexes to evaluate the release before installation.
 
-When the player chooses Continue and returns to New Bark Town, the mod asks whether to continue the Gym Challenge in Kanto. Choosing **No** leaves the native post-game route alone. Choosing **Yes** reactivates routing, heals the party, and sends the player to the next physical gym.
+The distributed ZIP has been rebuilt as a clean player package. It retains the mod, manifest, and player documentation while excluding local regression harnesses, testing instructions, internal design notes, research notes, and packaging metadata. No challenge rules, gym generation, Gym Challenge progression, recovery controls, Gold Continue checkpoint, teleport routing, rewards, or Crystal 251 behavior has changed.
 
-The second phase covers Kanto gyms 9–16. After the eighth Kanto badge, routing stops again and the player proceeds naturally through the second Elite Four and Champion. The second Champion victory marks the Gym Challenge complete and permanently disables challenge teleports for that save.
-
-The Gold regression harness now covers the Continue prompt, Yes-gated Kanto warp, second-league handoff, final Champion completion, and preservation of the recovery controls.
+The 1.1.2 source and final install archive pass current Gen1Recomp 0.2.3 validation, linting, Gen 2 compatibility checks, and the saved Gen 1 and Gold regression harnesses.
