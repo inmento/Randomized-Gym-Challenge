@@ -13,7 +13,7 @@ Every gameplay option starts **Off**. Enable the combination you want before vis
 | Setting | What it changes |
 |---|---|
 | Randomize Gym Leaders | A different leader occupies each gym. Their sprite and opening dialogue follow them, while the building keeps its own badge and reward flow. |
-| Randomize Team Composition | Generates gym-leader teams from the game’s imported Pokémon roster. The physical gym still determines the team size. |
+| Randomize Team Composition | Generates gym-leader teams from the valid merged live Pokémon roster. The physical gym still determines the team size. |
 | Randomize Levels | Varies each slot around that physical gym’s intended level curve. |
 | Preserve Gym Type Theme | Uses the physical gym’s type concept. For example, Brock’s gym selects Rock- or Ground-type candidates. |
 | Enforce Evolution Stage | Tries to match the base, middle, or final evolution stage of the original team slot. |
@@ -46,11 +46,11 @@ After each physical gym badge and native reward flow resolves, Gym Challenge hea
 
 The package targets **Red, Blue, Yellow, and Gold** with Mod API 2. It was statically checked with Gen 1 Recomp’s Gen 2 compatibility checker and uses the documented gym-battle seams rather than raw ROM data.
 
-**Crystal 251 is optional.** In Red, Blue, and Yellow, the mod detects Crystal 251 when available and reads its merged live registries for Pokémon, trainers, items, types, and maps. It clones imported records when generating challenge content and does not replace Crystal’s story, battle, evolution, or map systems. Without Crystal 251, standalone behavior is unchanged.
+**Expanded Pokédex providers are optional.** In Red, Blue, and Yellow, the mod reads the effective merged dex range and only selects complete live species records when generating optional teams. Crystal 251 is a supported provider: its Pokémon, trainers, items, types, and maps are read without replacing Crystal’s story, battle, evolution, or map systems. Other compatible providers can contribute valid records under the same rule. Without an expansion provider, standalone native-roster behavior is unchanged.
 
 Do **not** enable this at the same time as [Gym Leader Shuffle](https://github.com/inmento/Gym-Leader-Shuffle). Both mods change the gym-leader battle path, so this package declares a direct conflict to prevent an unsafe combination.
 
-## Installing version 1.0.6
+## Installing the current version
 
 Download the ZIP from the repository’s **Releases** page, extract the `randomized_gym_challenge` folder into the Gen 1 Recomp `mods` folder, then enable it for the game you are testing.
 

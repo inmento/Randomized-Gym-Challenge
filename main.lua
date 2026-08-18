@@ -1,5 +1,5 @@
 -- Randomized Gym Challenge
--- Release 1.1.2
+-- Release 1.1.3
 -- Gen 1 Recomp mod API 2
 --
 -- This is intentionally separate from Gym Leader Shuffle.  It uses the same
@@ -15,6 +15,21 @@ return function(mod)
     local ok, handle = pcall(mod.find, mod, "CRYSTAL_251")
     local exports = ok and type(handle) == "table" and handle.exports or nil
     return type(exports) == "table" and tonumber(exports.dexSize) == 251
+  end
+
+  -- A merged content provider may extend the available roster. This helper
+  -- only sets the upper bound; candidate collection still requires a complete
+  -- live species record and never rewrites its authored data.
+  local function liveDexLimit()
+    local fallback = isGold and 251 or 151
+    local constants = mod.content and mod.content.constants
+    if type(constants) == "table" and type(constants.get) == "function" then
+      local ok, value = pcall(constants.get, constants, "dexSize")
+      value = ok and tonumber(value) or nil
+      if value and value >= fallback then return math.floor(value) end
+    end
+    if crystal251Active() then return math.max(fallback, 251) end
+    return fallback
   end
 
   mod.options:define({
@@ -578,9 +593,11 @@ return function(mod)
   local function buildSpeciesIndex()
     if PRE_EVOLUTION then return end
     PRE_EVOLUTION, SPECIES = {}, {}
+    local maxDex = liveDexLimit()
     for speciesId, pokemon in mod.content.pokemon:each() do
       local dex = tonumber(pokemon and pokemon.dex)
-      if type(speciesId) == "string" and dex and dex >= 1 and dex <= (isGold and 251 or 151) then
+      if type(speciesId) == "string" and dex and dex >= 1 and dex <= maxDex
+          and type(pokemon.baseStats) == "table" then
         SPECIES[#SPECIES + 1] = speciesId
       end
       for _, evolution in ipairs(pokemon and pokemon.evolutions or {}) do

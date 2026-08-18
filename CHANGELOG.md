@@ -1,9 +1,9 @@
 # Changelog
 
-## 1.1.2 — Release metadata and clean package maintenance
+## 1.1.3 — Merged live-species compatibility
 
-Randomized Gym Challenge now declares its tested **Gen1Recomp API 2** compatibility floor (`>=0.1.99`) in the manifest, allowing the launcher and mod indexes to evaluate the release before installation.
+When optional team randomization is enabled, Randomized Gym Challenge now builds eligible species candidates from the **merged live Pokédex range** instead of a fixed Gen 1 ceiling. It only accepts complete registered species records and does not patch foreign species stats, types, learnsets, sprites, or evolution data.
 
-The distributed ZIP has been rebuilt as a clean player package. It retains the mod, manifest, and player documentation while excluding local regression harnesses, testing instructions, internal design notes, research notes, and packaging metadata. No challenge rules, gym generation, Gym Challenge progression, recovery controls, Gold Continue checkpoint, teleport routing, rewards, or Crystal 251 behavior has changed.
+This allows compatible expanded-roster providers, including Crystal 251, to contribute valid species to generated Gym teams when they are active. The native 151-species behavior remains unchanged when no expansion provider is installed. The standalone Gen 1 Shedinja mod remains a separate #152 data provider and should not be combined with Crystal 251.
 
-The 1.1.2 source and final install archive pass current Gen1Recomp 0.2.3 validation, linting, Gen 2 compatibility checks, and the saved Gen 1 and Gold regression harnesses.
+Gym Leader Shuffle remains intentionally incompatible because both mods alter the same Gym leader, trainer-party, script, NPC, and map state systems.
