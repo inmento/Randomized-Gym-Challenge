@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.4 — Compact option labels
+
+All Gen 1 and Gold challenge settings now use labels that fit the fixed 17-column mod-settings viewport. This is a display-only correction: Gym Challenge routing, progress recovery, randomized teams, difficulty presets, held-item rules, hints, rewards, and conflict behavior are unchanged.
+
 ## 1.1.3 — Merged live-species compatibility
 
 When optional team randomization is enabled, Randomized Gym Challenge now builds eligible species candidates from the **merged live Pokédex range** instead of a fixed Gen 1 ceiling. It only accepts complete registered species records and does not patch foreign species stats, types, learnsets, sprites, or evolution data.
