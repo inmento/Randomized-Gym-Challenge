@@ -1,5 +1,5 @@
 -- Randomized Gym Challenge
--- Release 1.1.6
+-- Release 1.1.8
 -- Gen 1 Recomp mod API 2
 --
 -- This is intentionally separate from Gym Leader Shuffle.  It uses the same
@@ -1114,6 +1114,31 @@ return function(mod)
     elseif not (state.guideRewards and state.guideRewards[gym.id]) then
       pendingGuideReward = { gym=gym, game=mod.game }
     end
+  end)
+
+  -- The final Oak parcel cutscene writes this Route 22 arm only after the
+  -- Pokédex, rival departure, and all required native flags are in place.
+  -- Schedule the choice in the script context's own afterScript queue so it
+  -- runs at the exact end of that native script even if a generic lifecycle
+  -- listener is unavailable or dispatched after another screen transition.
+  mod.hooks:wrap("script.command", function(nextCommand, ctx, name, args)
+    local result = nextCommand(ctx, name, args)
+    if not isGold and name == "set_flag" and args and args[1] == "EVENT_ROUTE22_RIVAL_WANTS_BATTLE" then
+      local game = mod.game
+      local map = game and game.world and game.world.map
+      if map and map.id == "OAKS_LAB" then
+        ctx.afterScript = ctx.afterScript or {}
+        ctx.afterScript[#ctx.afterScript + 1] = function()
+          local milestoneGame = mod.game
+          if postIntroMilestoneReady(milestoneGame)
+            and not challengeActive() and not mod.save:get(GYM_CHALLENGE_OFFERED_KEY) then
+            mod.save:set(GYM_CHALLENGE_PENDING_KEY, nil)
+            offerChallengeAtMilestone(milestoneGame)
+          end
+        end
+      end
+    end
+    return result
   end)
 
   mod.events:on("script.ended", function(event)

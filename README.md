@@ -30,7 +30,7 @@ The **OPEN PROGRESS HISTORY** action records completed physical gyms, the next g
 
 ## Gym Challenge mode — new and untested
 
-**Gym Challenge** is an optional progression mode offered once at the end of the native opening sequence. In Red, Blue, and Yellow, it appears only after the player has chosen a starter, beaten the Oak’s Lab rival, returned Oak’s Parcel, received the Pokédex, and the full Oak’s Lab cutscene has finished. In Gold, it appears only after the player has received a starter, returned to Elm’s Lab with the Mystery Egg, and handed that egg to Elm. Choosing **No** leaves normal game flow unchanged.
+**Gym Challenge** is an optional progression mode offered once at the end of the native opening sequence. In Red, Blue, and Yellow, it is queued directly by the completed native Oak’s Lab parcel/Pokédex cutscene, after the player has chosen a starter, beaten the Oak’s Lab rival, returned Oak’s Parcel, received the Pokédex, and the rival has departed. It does not require leaving and re-entering the lab. In Gold, it appears only after the player has received a starter, returned to Elm’s Lab with the Mystery Egg, and handed that egg to Elm. Choosing **No** leaves normal game flow unchanged.
 
 Choosing **Yes** first shows a concise start summary listing the first gym, saved difficulty preset, and enabled rules. It then safely updates the already received native starter, restores party HP without refilling move PP, and routes the player to the first physical gym. It does not replace either game’s native starter or early-story scripts.
 
@@ -46,7 +46,7 @@ After each physical gym badge and native reward flow resolves, Gen 1 asks whethe
 
 The package targets **Red, Blue, Yellow, and Gold** with Mod API 2. It was statically checked with Gen 1 Recomp’s Gen 2 compatibility checker and uses the documented gym-battle seams rather than raw ROM data.
 
-**Expanded Pokédex providers are optional.** In Red, Blue, and Yellow, the mod reads the effective merged dex range and only selects complete live species records when generating optional teams. Crystal 251 is a supported provider: its Pokémon, trainers, items, types, and maps are read without replacing Crystal’s story, battle, evolution, or map systems. Other compatible providers can contribute valid records under the same rule. Without an expansion provider, standalone native-roster behavior is unchanged.
+**Expanded Pokédex providers are optional.** In Red, Blue, and Yellow, the mod reads the effective merged dex range and only selects complete live species records when generating optional teams. Crystal 251 is a supported provider: its Pokémon, trainers, items, types, and maps are read without replacing Crystal’s story, battle, evolution, or map systems. It does not alter the native Oak’s Lab parcel/Pokédex flags or the Gym Challenge offer trigger. Other compatible providers can contribute valid records under the same rule. Without an expansion provider, standalone native-roster behavior is unchanged.
 
 Do **not** enable this at the same time as [Gym Leader Shuffle](https://github.com/inmento/Gym-Leader-Shuffle). Both mods change the gym-leader battle path, so this package declares a direct conflict to prevent an unsafe combination.
 

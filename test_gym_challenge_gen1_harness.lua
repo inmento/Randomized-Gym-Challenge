@@ -146,7 +146,15 @@ assert(not game.pendingChoice,
   "Gym Challenge offered before Oak received the parcel and gave the Pokédex")
 game.save.flags.EVENT_OAK_GOT_PARCEL = true
 game.save.flags.EVENT_GOT_POKEDEX = true
-emit("script.ended", { completed=true })
+local oakParcelContext = {}
+assert(callbacks.hooks["script.command"], "Gym Challenge did not install the native parcel completion hook")
+callbacks.hooks["script.command"](function(ctx, name, args)
+  assert(ctx == oakParcelContext and name == "set_flag"
+    and args[1] == "EVENT_ROUTE22_RIVAL_WANTS_BATTLE", "wrong native parcel command")
+  game.save.flags[args[1]] = true
+end, oakParcelContext, "set_flag", { "EVENT_ROUTE22_RIVAL_WANTS_BATTLE" })
+assert(not game.pendingChoice, "Gym Challenge offered before the native Oak parcel script finished")
+for _, afterScript in ipairs(oakParcelContext.afterScript or {}) do afterScript() end
 assert(game.pendingChoice and not storage.gym_challenge_state,
   "Gen 1 Gym Challenge offer did not follow the completed Oak parcel handoff")
 game.pendingChoice(true)

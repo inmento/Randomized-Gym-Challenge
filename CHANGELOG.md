@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.8 — Direct Oak cutscene completion hook
+
+This release fixes the remaining Gen 1 new-save offer failure by attaching Gym Challenge directly to the final native Oak parcel/Pokédex cutscene command. The prompt is now queued through that script’s own post-completion callback, after the Pokédex, rival departure, and Route 22 progression flag have all been applied. It no longer depends solely on a generic script lifecycle listener reaching the prompt at the correct moment.
+
+Crystal 251 does not override Oak’s Lab flags, map ID, or script completion events. Its Randomized Gym Challenge integration remains limited to optional merged-roster data, so it is not the cause of this offer failure.
+
 ## 1.1.7 — Gen 1 post-parcel offer correction
 
 This release fixes the Gen 1 Gym Challenge offer failing to appear after the player returns Oak’s Parcel. The offer is now keyed to the completed native Oak’s Lab milestone: the player must have defeated the starter rival, delivered the parcel, and received the Pokédex. This is the exact sequence that finishes after the rival departs.
