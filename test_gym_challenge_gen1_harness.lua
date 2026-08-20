@@ -54,11 +54,14 @@ local options = {
 }
 local game
 game = {
-  data={ text={}, pokemon={}, items={}, trainerHeader=function(_, mapId, objectIndex)
-    return { battle="BATTLE_" .. mapId .. objectIndex, won="WON_" .. mapId .. objectIndex, after="AFTER_" .. mapId .. objectIndex }
+  data={ text={}, pokemon={}, items={}, trainer_headers={}, trainerHeader=function(self, mapId, objectIndex)
+    self.trainer_headers[mapId] = self.trainer_headers[mapId] or {}
+    self.trainer_headers[mapId][objectIndex] = self.trainer_headers[mapId][objectIndex]
+      or { battle="BATTLE_" .. mapId .. objectIndex, won="WON_" .. mapId .. objectIndex, after="AFTER_" .. mapId .. objectIndex }
+    return self.trainer_headers[mapId][objectIndex]
   end },
   save={ options={ modOptions={} }, flags={}, inventory={}, defeatedTrainers={}, party={ {
-    species="BULBASAUR", level=5, hp=20, dvs={}, statExp={}, stats={ hp=20 },
+    species="BULBASAUR", level=5, hp=7, dvs={}, statExp={}, stats={ hp=20 }, moves={ { id="TACKLE", pp=7 } },
   } } },
   stack={
     push=function(_, box)
@@ -120,6 +123,14 @@ assert(schemaKeys.challenge_progress_action and schemaKeys.challenge_hint_action
   and schemaKeys.abandon_challenge_action and schemaKeys.difficulty_preset,
   "progress, hint, abandon, and preset options are missing")
 assert(not callbacks.hooks["intro.oak_speech.build"], "Gym Challenge must not alter Oak's introduction")
+for mapId, rows in pairs(mapScripts) do
+  for _, row in ipairs(rows) do
+    for textId in pairs(row.talk or {}) do
+      assert(not tostring(textId):match("^TRAINER_"),
+        "support trainer " .. tostring(textId) .. " was given a talk override and lost sight-line engagement on " .. tostring(mapId))
+    end
+  end
+end
 
 -- The offer appears only after the player has a starter, defeats the native
 -- Oak's Lab rival, and the native victory script writes its completion flag.
@@ -127,7 +138,7 @@ game.world.map={ id="OAKS_LAB" }
 emit("script.ended", { completed=true })
 assert(not game.pendingChoice and not storage.gym_challenge_state,
   "Gym Challenge offered before the Oak's Lab rival was defeated")
-emit("battle.ended", { result="win", battle={ trainer={ classId="RIVAL1" } } })
+emit("battle.ended", { result="win", battle={ oppClass="OPP_RIVAL1", trainer={} } })
 assert(not game.pendingChoice, "Gym Challenge offered before the native rival script completed")
 game.save.flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB = true
 emit("script.ended", { completed=true })
@@ -138,8 +149,10 @@ local state = assert(storage.gym_challenge_state, "accepted Gen 1 Gym Challenge 
 assert(state.acceptedPostIntro and state.starterLeveled and state.pendingWarp == nil,
   "accepted Gen 1 challenge did not finalize its starter state")
 assert(game.save.party[1].level == 12, "neutral Gen 1 starter was not raised to the first-gym baseline")
-assert(game.healCalls == 1 and game.lastWarp and game.lastWarp.mapId == "PEWTER_CITY",
-  "accepted Gen 1 Gym Challenge did not heal and warp to Pewter")
+assert((game.healCalls or 0) == 0 and game.lastWarp and game.lastWarp.mapId == "PEWTER_CITY",
+  "accepted Gen 1 Gym Challenge did not use HP-only recovery and warp to Pewter")
+assert(game.save.party[1].hp == game.save.party[1].stats.hp and game.save.party[1].moves[1].pp == 7,
+  "accepted Gen 1 Gym Challenge did not restore HP while preserving move PP")
 assert(state.lastRoute and state.lastRoute.status == "WARPED" and state.lastRoute.gym == "OPP_BROCK",
   "accepted Gen 1 Gym Challenge did not record its first-gym route status")
 assert(game.lastText and game.lastText:find("FIRST GYM: BROCK", 1, true)
@@ -170,17 +183,22 @@ emit("screen.popped", {})
 assert(storage.gym_challenge_state.guideRewards.OPP_MISTY, "Gen 1 Gym Guide reward could not be retried after bag-full")
 
 -- The physical badge appears only after the native gym reward. The registered
--- onVictory callback then heals and routes to Cerulean; unrelated trainer wins
--- leave state unchanged because no physical badge is present.
+-- onVictory callback must offer a player choice. Choosing Yes restores HP only
+-- and routes to Cerulean; unrelated trainer wins leave state unchanged because
+-- no physical badge is present.
+game.save.party[1].hp, game.save.party[1].moves[1].pp = 3, 4
 game.save.inventory.BOULDERBADGE = true
 local fired = false
 for _, row in ipairs(mapScripts.PEWTER_GYM or {}) do
   if row.onVictory then row.onVictory(game, game.world); fired=true end
 end
-assert(fired, "Gen 1 gym reward callback was not registered")
+assert(fired and game.pendingChoice, "Gen 1 gym reward did not offer route continuation")
+game.pendingChoice(true)
 state = storage.gym_challenge_state
-assert(state.completed.OPP_BROCK and game.lastWarp.mapId == "CERULEAN_CITY" and game.healCalls == 2,
-  "Gen 1 physical gym reward did not advance, heal, and route to Misty")
+assert(state.completed.OPP_BROCK and game.lastWarp.mapId == "CERULEAN_CITY" and (game.healCalls or 0) == 0,
+  "Gen 1 physical gym reward did not route to Misty through HP-only recovery")
+assert(game.save.party[1].hp == game.save.party[1].stats.hp and game.save.party[1].moves[1].pp == 4,
+  "Gen 1 post-gym continuation restored PP instead of HP only")
 
 -- A failed engine warp must never advance native story state or lose the next
 -- destination. The challenge pauses with a diagnostic until the player checks
@@ -188,12 +206,41 @@ assert(state.completed.OPP_BROCK and game.lastWarp.mapId == "CERULEAN_CITY" and 
 game.failWarp = true
 game.save.inventory.CASCADEBADGE = true
 for _, row in ipairs(mapScripts.CERULEAN_GYM or {}) do if row.onVictory then row.onVictory(game, game.world) end end
+assert(game.pendingChoice, "second Gen 1 gym reward did not offer route continuation")
+game.pendingChoice(true)
 state = storage.gym_challenge_state
 assert(state.completed.OPP_MISTY and state.pendingWarp == "OPP_LT_SURGE"
   and state.lastRoute and state.lastRoute.status == "PAUSED",
   "failed Gen 1 route did not preserve a paused diagnostic state")
 assert(game.lastWarp.mapId == "CERULEAN_CITY", "failed Gen 1 route changed the player destination")
 game.failWarp = false
+
+-- A player who declines the immediate route can heal at a Pokémon Center and
+-- later ask the same physical Gym Guide to continue. The deferred path must
+-- show the same choice and preserve PP exactly as the immediate path does.
+game.save.party[1].hp, game.save.party[1].moves[1].pp = 2, 3
+game.world.map = { id="CERULEAN_GYM" }
+emit("world.interacted", { mapId="CERULEAN_GYM", kind="npc", target=mistyGuide })
+emit("screen.popped", {})
+assert(game.pendingChoice, "completed gym guide did not offer deferred route continuation")
+game.pendingChoice(true)
+state = storage.gym_challenge_state
+assert(game.lastWarp.mapId == "VERMILION_CITY" and game.save.party[1].hp == game.save.party[1].stats.hp
+  and game.save.party[1].moves[1].pp == 3,
+  "Gym Guide continuation did not route with HP-only recovery")
+
+-- The eighth badge routes to the south end of Route 23, before every native
+-- badge guard and the Victory Road cave entrance, never directly to the league.
+for _, badge in ipairs({ "THUNDERBADGE", "RAINBOWBADGE", "SOULBADGE", "MARSHBADGE", "VOLCANOBADGE", "EARTHBADGE" }) do
+  game.save.inventory[badge] = true
+end
+for _, row in ipairs(mapScripts.VIRIDIAN_GYM or {}) do if row.onVictory then row.onVictory(game, game.world) end end
+assert(game.pendingChoice, "eighth badge did not offer the Victory Road handoff")
+game.pendingChoice(true)
+state = storage.gym_challenge_state
+assert(state.phase == "victory_road" and game.lastWarp.mapId == "ROUTE_23"
+  and game.lastWarp.x == 7 and game.lastWarp.y == 138,
+  "eighth badge did not route to the Route 23 badge-guard approach")
 
 -- Abandoning is confirmation-gated and clears only Gym Challenge state plus
 -- its generated plan; native badges, party, and inventory remain untouched.

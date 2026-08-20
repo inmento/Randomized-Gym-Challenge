@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.5 — Gen 1 Gym Challenge progression repair
+
+This hotfix corrects the Gen 1 post-intro trigger by recognizing the Oak's Lab starter rival through the engine’s live trainer class. Oak now offers Gym Challenge only after the rival’s complete post-battle departure script has finished.
+
+Gym support trainers no longer receive map talk-script overrides, which had made the engine classify them as script-owned NPCs and skip their normal sight-line approach. They now engage when they see the player again, while their selected source-gym battle, victory, and after-battle dialogue remains projected through the native trainer-header path.
+
+After each earned Gen 1 badge and its native reward, the player is asked whether to continue immediately. Choosing Yes restores party HP only—never move PP—and routes to the queued destination. Choosing No preserves the route; after visiting a Pokémon Center or otherwise preparing, speaking to the physical Gym Guide offers the same continuation. After the eighth badge, the final choice routes to Route 23 before all eight native badge guards and Victory Road, leaving the rival, cave, Elite Four, and Champion progression native.
+
 ## 1.1.4 — Compact option labels
 
 All Gen 1 and Gold challenge settings now use labels that fit the fixed 17-column mod-settings viewport. This is a display-only correction: Gym Challenge routing, progress recovery, randomized teams, difficulty presets, held-item rules, hints, rewards, and conflict behavior are unchanged.

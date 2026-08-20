@@ -1,5 +1,5 @@
 -- Randomized Gym Challenge
--- Release 1.1.3
+-- Release 1.1.5
 -- Gen 1 Recomp mod API 2
 --
 -- This is intentionally separate from Gym Leader Shuffle.  It uses the same
@@ -205,6 +205,13 @@ return function(mod)
     OPP_BLAINE={ mapId="CINNABAR_ISLAND", x=18, y=4 },
     OPP_GIOVANNI={ mapId="VIRIDIAN_CITY", x=32, y=8 },
   }
+
+  -- Route 23 (7,138) is immediately inside the Indigo Plateau approach, south
+  -- of every badge guard and before the Victory Road cave entrance at (4,31).
+  -- The final Gen 1 handoff therefore preserves the entire native eight-badge
+  -- check, rival, cave, and Elite Four route instead of bypassing it.
+  local GEN1_VICTORY_ROAD_ENTRY = { mapId="ROUTE_23", x=7, y=138, facing="up" }
+  local GEN1_VICTORY_ROAD_PENDING = "__GYM_CHALLENGE_VICTORY_ROAD__"
 
   local GOLD_BADGE_KEYS = {
     FALKNER="ZEPHYR", BUGSY="HIVE", WHITNEY="PLAIN", MORTY="FOG",
@@ -431,44 +438,71 @@ return function(mod)
       return false
     end
     state.pendingWarp = gym.id
-    setRouteStatus(state, "QUEUED", gym, "WAITING FOR NATIVE SCRIPT")
+    setRouteStatus(state, "QUEUED", gym, "NEXT GYM READY")
     return true
+  end
+
+  local function queueGen1VictoryRoadWarp(state)
+    if isGold or not state then return false end
+    state.pendingWarp = GEN1_VICTORY_ROAD_PENDING
+    setRouteStatus(state, "QUEUED", nil, "VICTORY ROAD READY")
+    return true
+  end
+
+  local function queuedRouteTarget(state)
+    local pending = state and state.pendingWarp
+    if pending == GEN1_VICTORY_ROAD_PENDING then
+      return GEN1_VICTORY_ROAD_ENTRY, nil, "VICTORY ROAD"
+    end
+    local gym = pending and BY_ID[pending]
+    return gym and GYM_TELEPORTS[gym.id] or nil, gym, gym and gym.name or nil
   end
 
   local function warpQueuedGym()
     local state = challengeActive()
-    local gym = state and state.pendingWarp and BY_ID[state.pendingWarp]
-    local target = gym and GYM_TELEPORTS[gym.id]
+    local pending = state and state.pendingWarp
+    local target, gym, name = queuedRouteTarget(state)
     if not target then
       if state then
         state.pendingWarp = nil
-        setRouteStatus(state, "PAUSED", gym, "NO VALID NEXT GYM DESTINATION")
+        setRouteStatus(state, "PAUSED", gym, "NO VALID NEXT DESTINATION")
         saveChallenge(state)
       end
       return false
     end
     state.pendingWarp = nil
     saveChallenge(state)
-    local ok, err = mod.world:warpTo(target.mapId, target.x, target.y, "up", { arrive="teleport" })
+    local ok, err = mod.world:warpTo(target.mapId, target.x, target.y, target.facing or "up", { arrive="teleport" })
     if not ok then
-      state.pendingWarp = gym.id
+      state.pendingWarp = pending
       setRouteStatus(state, "PAUSED", gym, "WARP FAILED")
       saveChallenge(state)
-      mod.log:warn("Gym Challenge warp failed for %s: %s", gym.id, tostring(err))
+      mod.log:warn("Gym Challenge warp failed for %s: %s", tostring(name or pending), tostring(err))
       return false
     end
-    setRouteStatus(state, "WARPED", gym, "ARRIVED AT NEXT GYM")
+    setRouteStatus(state, "WARPED", gym, gym and "ARRIVED AT NEXT GYM" or "ARRIVED AT VICTORY ROAD")
     saveChallenge(state)
     return true
   end
 
-  local function healChallengeParty(onDone)
-    -- `nurseHeal` is the Mod API's cross-generation recovery operation. Its
-    -- callback runs after the engine has restored the party, allowing a queued
-    -- warp to happen only after the complete native heal sequence finishes.
+  local function recoverChallengeParty(game, onDone)
+    -- Gen 1 Gym Challenge deliberately restores HP only: a player who accepts
+    -- the next route immediately keeps every move's current PP. Gold retains
+    -- its established native recovery flow, whose separate route rules were
+    -- already live before this Gen 1 correction.
     onDone = onDone or function() end
-    local ok = mod.world:nurseHeal(onDone)
-    if not ok then onDone() end
+    if isGold then
+      local ok = mod.world:nurseHeal(onDone)
+      if not ok then onDone() end
+      return
+    end
+    for _, mon in ipairs(game and game.save and game.save.party or {}) do
+      local maximum = tonumber(mon and mon.stats and mon.stats.hp)
+        or tonumber(mon and mon.maxHp)
+        or tonumber(mon and mon.hp)
+      if maximum and maximum > 0 then mon.hp = maximum end
+    end
+    onDone()
   end
 
   local function expForLevel(growthRate, level)
@@ -570,7 +604,7 @@ return function(mod)
           return
         end
         showChallengeText(game, challengeStartSummary(state, firstGym), function()
-          healChallengeParty(function() warpQueuedGym() end)
+          recoverChallengeParty(game, function() warpQueuedGym() end)
         end)
       end)
     end)
@@ -966,10 +1000,11 @@ return function(mod)
       state.warpAfterScript = false
       state.teleportEnabled = false
     else
-      state.phase = "complete"
-      state.warpAfterScript = false
-      state.teleportEnabled = false
-      state.completionNoticePending = true
+      -- Gen 1's eighth badge leads to Route 23, not an invented Elite Four
+      -- warp. The pending handoff begins before all eight native badge guards.
+      state.phase = "victory_road"
+      state.teleportEnabled = true
+      state.warpAfterScript = queueGen1VictoryRoadWarp(state)
     end
     saveChallenge(state)
     return completedGym
@@ -992,21 +1027,46 @@ return function(mod)
       .. rewardItemName(itemId) .. ((quantity and quantity > 1) and (" x" .. quantity) or "") .. "!", onDone)
   end
 
+  local function offerGen1QueuedContinuation(game, source)
+    local state = challengeActive()
+    if isGold or not (state and state.pendingWarp) then return false end
+    local _, gym, destinationName = queuedRouteTarget(state)
+    local destination = destinationName or "THE NEXT GYM"
+    local prompt
+    if state.pendingWarp == GEN1_VICTORY_ROAD_PENDING then
+      prompt = "ALL EIGHT BADGES ARE\nNOW YOURS!\fCONTINUE TO VICTORY\nROAD NOW?"
+    else
+      prompt = "GYM BADGE SECURED!\fCONTINUE TO " .. destination .. "\nNOW?"
+    end
+    showChallengeChoice(game, prompt, function(yes)
+      if not yes then
+        setRouteStatus(state, "PAUSED", gym, "PLAYER WILL CONTINUE LATER")
+        saveChallenge(state)
+        showChallengeText(game, "TAKE A BREATHER.\fTHE GYM GUIDE CAN\nROUTE YOU WHEN READY.")
+        return
+      end
+      recoverChallengeParty(game, function() warpQueuedGym() end)
+    end)
+    return true
+  end
+
   local function advanceChallengeAfterReward(game, overworld)
     local completedGym = completeEarnedGyms(game)
     if not completedGym then return false end
     local state = challengeActive()
-    if state and state.completionNoticePending then
-      state.completionNoticePending = false
+    if not isGold and state and state.warpAfterScript and state.teleportEnabled ~= false then
+      -- Gen 1 asks after every native reward instead of silently warping. A No
+      -- keeps the destination queued for the physical Gym Guide.
+      state.warpAfterScript = false
       saveChallenge(state)
-      showChallengeText(game, "GYM CHALLENGE COMPLETE!\nALL PHYSICAL GYMS CLEARED.\fTHE NATIVE LEAGUE STORY\nREMAINS YOUR NEXT STEP.")
+      offerGen1QueuedContinuation(game, "reward")
       return true
     end
     if state and state.warpAfterScript and state.teleportEnabled ~= false then
       local function continueRoute()
         state.warpAfterScript = false
         saveChallenge(state)
-        healChallengeParty(function() warpQueuedGym() end)
+        recoverChallengeParty(game, function() warpQueuedGym() end)
       end
       if isGold then offerGoldLeaderFallback(game, completedGym, continueRoute) else continueRoute() end
       return true
@@ -1018,6 +1078,7 @@ return function(mod)
   -- coordinate table. Native Gym Guide dialogue runs first; the extra
   -- encouragement box is shown only after that native interaction completes.
   pendingGuideReward = nil
+  local pendingGuideContinuation = nil
   local function guideForInteraction(event)
     local gym = event and BY_MAP[event.mapId]
     local npc = event and event.kind == "npc" and event.target
@@ -1038,7 +1099,13 @@ return function(mod)
   mod.events:on("world.interacted", function(event)
     local state = challengeActive()
     local gym = state and guideForInteraction(event)
-    if gym and not (state.guideRewards and state.guideRewards[gym.id]) then
+    if not gym then return end
+    -- A completed physical gym with a queued destination is the player's
+    -- explicit later-continuation point. Let the native Gym Guide speak first,
+    -- then offer this route instead of silently warping on map re-entry.
+    if not isGold and state.pendingWarp and state.completed and state.completed[gym.id] then
+      pendingGuideContinuation = { gym=gym, game=mod.game }
+    elseif not (state.guideRewards and state.guideRewards[gym.id]) then
       pendingGuideReward = { gym=gym, game=mod.game }
     end
   end)
@@ -1062,11 +1129,15 @@ return function(mod)
     if not state then return end
     local game = mod.game
     if state.warpAfterScript then
-      -- The native starter/reward script has completed. Heal through the
-      -- engine command, then move to the already chosen physical gym.
+      if not isGold then
+        -- Gen 1 reward completion is followed by the player-facing choice from
+        -- `onVictory`; do not let this general script event silently consume it.
+        return
+      end
+      -- Gold retains its existing post-script routing sequence.
       state.warpAfterScript = false
       saveChallenge(state)
-      healChallengeParty(function() warpQueuedGym() end)
+      recoverChallengeParty(game, function() warpQueuedGym() end)
       return
     end
     advanceChallengeAfterReward(game, game and game.world)
@@ -1077,12 +1148,16 @@ return function(mod)
     if not isGold then
       local game = mod.game
       local map = game and game.world and game.world.map
+      -- `BattleState.newTrainer` publishes the live trainer class as
+      -- `oppClass`. `battle.trainer` is only the trainer-data row and does not
+      -- reliably retain a class id, which left the offer unarmed in live play.
       local trainer = battle and battle.trainer or {}
-      local classId = trainer.classId or trainer.class or trainer.id
+      local classId = battle and battle.oppClass or trainer.classId or trainer.class or trainer.id
       if event and event.result == "win" and map and map.id == "OAKS_LAB"
-        and (classId == "RIVAL1" or classId == "OPP_RIVAL1" or classId == "RIVAL") then
+        and (classId == "OPP_RIVAL1" or classId == "RIVAL1" or classId == "RIVAL") then
         -- The native exit script writes EVENT_BATTLED_RIVAL_IN_OAKS_LAB after
-        -- this event. `script.ended` below waits for that completed script.
+        -- this event. `script.ended` then presents the challenge only after the
+        -- rival's complete departure dialogue, at the requested post-rival beat.
         mod.save:set(GYM_CHALLENGE_PENDING_KEY, true)
       end
       return
@@ -1127,7 +1202,7 @@ return function(mod)
           if nextGym and queueGymWarp(state, nextGym) then
             saveChallenge(state)
             showChallengeText(mod.game, "KANTO CHALLENGE\nACCEPTED!\fTHE NEXT GYM\nIS AHEAD.", function()
-              healChallengeParty(function() warpQueuedGym() end)
+              recoverChallengeParty(mod.game, function() warpQueuedGym() end)
             end)
           else
             state.phase = "awaiting_kanto_opt_in"
@@ -1141,6 +1216,12 @@ return function(mod)
   end)
 
   mod.events:on("screen.popped", function()
+    if not isGold and pendingGuideContinuation then
+      local pending = pendingGuideContinuation
+      pendingGuideContinuation = nil
+      offerGen1QueuedContinuation(pending.game, "guide")
+      return
+    end
     if not isGold and pendingGuideReward then
       local pending = pendingGuideReward
       pendingGuideReward = nil
@@ -1293,6 +1374,41 @@ return function(mod)
       GYM_TRAINERS_BY_GYM[physicalGym.id] = records
     end
 
+    -- `checkTrainerSight` intentionally ignores an NPC whose text id is owned
+    -- by a map-script talk handler. Keep the native trainer path untouched and
+    -- project only source-gym dialogue fields onto the physical trainer header.
+    -- Header snapshots are keyed by the map's internal label because that is
+    -- the same key the engine's `Data:trainerHeader` accessor reads.
+    local ORIGINAL_GYM_TRAINER_HEADERS = {}
+    local function trainerHeaderKey(mapLabel, objectIndex)
+      return tostring(mapLabel) .. ":" .. tostring(objectIndex)
+    end
+
+    local function originalGymTrainerHeader(game, record)
+      local map = record and mod.content.maps:get(record.mapId)
+      local label = map and (map.label or map.id) or (record and record.mapId)
+      local key = trainerHeaderKey(label, record and record.objectIndex)
+      local stored = ORIGINAL_GYM_TRAINER_HEADERS[key]
+      if stored ~= nil then return stored and clone(stored) or nil, label end
+      local headers = game and game.data and game.data.trainer_headers
+      local header = headers and headers[label] and headers[label][record.objectIndex] or nil
+      ORIGINAL_GYM_TRAINER_HEADERS[key] = header and clone(header) or false
+      return header and clone(header) or nil, label
+    end
+
+    local function projectSupportTrainerHeader(game, destination, source)
+      local destinationHeader, destinationLabel = originalGymTrainerHeader(game, destination)
+      local sourceHeader = originalGymTrainerHeader(game, source)
+      local headers = game and game.data and game.data.trainer_headers
+      if not (destinationHeader and sourceHeader and headers and headers[destinationLabel]) then return end
+      -- Preserve the physical NPC's sight range and event flag. Only dialogue
+      -- belongs to the visiting source trainer.
+      destinationHeader.battle = sourceHeader.battle or destinationHeader.battle
+      destinationHeader.won = sourceHeader.won or destinationHeader.won
+      destinationHeader.after = sourceHeader.after or destinationHeader.after
+      headers[destinationLabel][destination.objectIndex] = destinationHeader
+    end
+
     local function sourceGymTrainer(destination, plan)
       if not (plan and plan.rules and plan.rules.randomize_leaders) then return destination end
       local visitor = visitorFor(BY_ID[destination.gymId], plan)
@@ -1394,54 +1510,21 @@ return function(mod)
       })
     end
 
-    local function supportTrainerTalk(destination)
-      return function(game, overworld, npc, done)
-        done = done or function() end
-        local plan = planForSave()
-        local source = sourceGymTrainer(destination, plan)
-        local header = game and game.data and game.data.trainerHeader
-          and game.data:trainerHeader(source.mapId, source.objectIndex)
-        local text = game and game.data and game.data.text or {}
-        if npc and npc.facePlayer and overworld and overworld.player then npc:facePlayer(overworld.player) end
-        if game.save.defeatedTrainers and game.save.defeatedTrainers[npc.id] then
-          local after = header and header.after and text[header.after]
-          if after then
-            local TextBox = require("src.render.TextBox")
-            game.stack:push(TextBox.new(game, after, done))
-          else
-            done()
-          end
-          return
-        end
-        local battleText = header and header.battle and text[header.battle]
-        local wonText = header and header.won and text[header.won]
-        local function engage() overworld:engageTrainer(npc, done, wonText, battleText ~= nil) end
-        if battleText then
-          local TextBox = require("src.render.TextBox")
-          game.stack:push(TextBox.new(game, battleText, engage))
-        else
-          engage()
-        end
-      end
-    end
-
-    for _, records in pairs(GYM_TRAINERS_BY_GYM) do
-      for _, trainer in ipairs(records) do
-        if trainer.text then
-          mod.content.map_scripts:register(trainer.mapId, {
-            priority=110, talk={ [trainer.text]=supportTrainerTalk(trainer) },
-          })
-        end
-      end
-    end
+    -- Do not register a `talk` handler for support trainers here. In v0.2.12,
+    -- that marker tells the engine the NPC is script-owned and it deliberately
+    -- skips the trainer's sight-line approach. Header projection in
+    -- `applySupportTrainers` below preserves selected source dialogue while the
+    -- unmodified native trainer path handles both a sighting and an A-button.
 
     local function applySupportTrainers(gym, plan)
+      local game = mod.game
       for _, destination in ipairs(GYM_TRAINERS_BY_GYM[gym.id] or {}) do
         local handle = mod.world:npc(gym.mapId, destination.objectIndex)
         local npc = handle and handle.npc
         if npc then
           local source = sourceGymTrainer(destination, plan)
           npc.def.trainerClass, npc.def.trainerParty = source.trainerClass, source.trainerParty
+          projectSupportTrainerHeader(game, destination, source)
           paint(npc, source.sprite or destination.sprite)
           LIVE_GYM_TRAINERS[npc.id] = { npc=npc, gym=gym, destination=destination, source=source }
         end
