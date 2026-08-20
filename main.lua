@@ -9,9 +9,9 @@
 return function(mod)
   local GameVersion = require("src.core.GameVersion")
   local playing = GameVersion.get()
-  local isGold = playing == "gold"
+  local isGen2 = GameVersion.generation(playing) == 2
   local function crystal251Active()
-    if isGold or type(mod.find) ~= "function" then return false end
+    if isGen2 or type(mod.find) ~= "function" then return false end
     local ok, handle = pcall(mod.find, mod, "CRYSTAL_251")
     local exports = ok and type(handle) == "table" and handle.exports or nil
     return type(exports) == "table" and tonumber(exports.dexSize) == 251
@@ -21,7 +21,7 @@ return function(mod)
   -- only sets the upper bound; candidate collection still requires a complete
   -- live species record and never rewrites its authored data.
   local function liveDexLimit()
-    local fallback = isGold and 251 or 151
+    local fallback = isGen2 and 251 or 151
     local constants = mod.content and mod.content.constants
     if type(constants) == "table" and type(constants.get) == "function" then
       local ok, value = pcall(constants.get, constants, "dexSize")
@@ -98,7 +98,7 @@ return function(mod)
   end
 
   local GYMS
-  if isGold then
+  if isGen2 then
     GYMS = {
       { id="FALKNER", name="FALKNER", mapId="VIOLET_GYM", objectIndex=1, scriptKey="56:412f", class=1, member=1, sprite="SPRITE_FALKNER", intro="56:41e0", types={"FLYING"} },
       { id="BUGSY", name="BUGSY", mapId="AZALEA_GYM", objectIndex=1, scriptKey="55:4d96", class=3, member=1, sprite="SPRITE_BUGSY", intro="55:4e83", types={"BUG"} },
@@ -147,7 +147,7 @@ return function(mod)
   end
 
   local CLASS_ID = {}
-  if isGold then
+  if isGen2 then
     for id, trainer in mod.content.trainers:each() do
       if type(trainer) == "table" and trainer.index ~= nil then CLASS_ID[trainer.index] = id end
     end
@@ -156,7 +156,7 @@ return function(mod)
   local VANILLA_PARTIES = {}
   for _, gym in ipairs(GYMS) do
     local party
-    if isGold then
+    if isGen2 then
       party = partyForGold(gym.class, gym.member, CLASS_ID)
     else
       local trainer = mod.content.trainers:get(gym.id)
@@ -179,7 +179,7 @@ return function(mod)
   local GYM_CHALLENGE_OFFERED_KEY = "gym_challenge_offer_seen_v2"
   local GYM_CHALLENGE_PENDING_KEY = "gym_challenge_offer_pending_v2"
 
-  local GYM_TELEPORTS = isGold and {
+  local GYM_TELEPORTS = isGen2 and {
     FALKNER={ mapId="VIOLET_CITY", x=18, y=17 },
     BUGSY={ mapId="AZALEA_TOWN", x=10, y=15 },
     WHITNEY={ mapId="GOLDENROD_CITY", x=24, y=7 },
@@ -249,7 +249,7 @@ return function(mod)
   -- drawn from the entire item table. They never use key items, HMs, TMs, or
   -- low-value filler; the later a physical gym sits in its challenge phase,
   -- the more weight moves toward recovery and premium training supplies.
-  local GUIDE_REWARD_WEIGHTS = isGold and {
+  local GUIDE_REWARD_WEIGHTS = isGen2 and {
     { id="POTION", weights={18,5,1} }, { id="SUPER_POTION", weights={14,14,5} },
     { id="HYPER_POTION", weights={3,14,14} }, { id="FULL_RESTORE", weights={0,2,8} },
     { id="FULL_HEAL", weights={5,7,8} }, { id="REVIVE", weights={3,8,10} },
@@ -304,7 +304,7 @@ return function(mod)
   local function grantGuideReward(game, itemId, quantity)
     local item = itemId and mod.content.items:get(itemId)
     if not (game and game.save and item) then return false end
-    if isGold then
+    if isGen2 then
       local world = game.world
       return world and world.giveItem and world:giveItem(item.index, quantity or 1) == true or false
     end
@@ -335,7 +335,7 @@ return function(mod)
 
   local function showChallengeText(game, text, done)
     done = done or function() end
-    if isGold and game and game.world and game.world.showText then
+    if isGen2 and game and game.world and game.world.showText then
       game.world:showText(text, done)
       return
     end
@@ -356,7 +356,7 @@ return function(mod)
   -- Gen 1’s supported intro step API places this decision immediately after
   -- player naming, without modifying Oak’s story dialogue or relying on an
   -- overworld event after the cutscene. Gold retains its separate Elm flow.
-  if not isGold then
+  if not isGen2 then
     mod.hooks:wrap("intro.oak_speech.build", function(next, steps, speech)
       steps = next(steps, speech)
       mod.ui.insertStepAfter(steps, "name_player", {
@@ -392,7 +392,7 @@ return function(mod)
   end
 
   challengePhaseGyms = function(state)
-    if not isGold then return GYMS end
+    if not isGen2 then return GYMS end
     local out, startAt, endAt = {}, state and state.phase == "kanto" and 9 or 1,
       state and state.phase == "kanto" and 16 or 8
     for index = startAt, endAt do out[#out + 1] = GYMS[index] end
@@ -401,7 +401,7 @@ return function(mod)
 
   local function badgeOwned(game, gym)
     if not (game and game.save and gym) then return false end
-    if isGold then
+    if isGen2 then
       local player = game.save.player or {}
       local store = (GOLD_BADGE_KEYS[gym.id] == "BOULDER" or GOLD_BADGE_KEYS[gym.id] == "CASCADE"
         or GOLD_BADGE_KEYS[gym.id] == "THUNDER" or GOLD_BADGE_KEYS[gym.id] == "RAINBOW"
@@ -471,7 +471,7 @@ return function(mod)
   end
 
   local function queueGen1VictoryRoadWarp(state)
-    if isGold or not state then return false end
+    if isGen2 or not state then return false end
     state.pendingWarp = GEN1_VICTORY_ROAD_PENDING
     setRouteStatus(state, "QUEUED", nil, "VICTORY ROAD READY")
     return true
@@ -519,7 +519,7 @@ return function(mod)
     -- its established native recovery flow, whose separate route rules were
     -- already live before this Gen 1 correction.
     onDone = onDone or function() end
-    if isGold then
+    if isGen2 then
       local ok = mod.world:nurseHeal(onDone)
       if not ok then onDone() end
       return
@@ -601,7 +601,7 @@ return function(mod)
     if challengeActive() then return false end
     local state = saveChallenge({
       enabled=true,
-      phase=isGold and "johto" or "kanto",
+      phase=isGen2 and "johto" or "kanto",
       completed={},
       acceptedPostIntro=true,
     })
@@ -640,7 +640,7 @@ return function(mod)
   end
 
   local function startGen1OptedInChallenge(game)
-    if isGold or challengeActive() or mod.save:get(GYM_CHALLENGE_PROMPT_KEY) ~= true then return false end
+    if isGen2 or challengeActive() or mod.save:get(GYM_CHALLENGE_PROMPT_KEY) ~= true then return false end
     -- Consume the one-time intro decision before routing so reloading during a
     -- displayed explanation cannot duplicate the starter adjustment or warp.
     mod.save:set(GYM_CHALLENGE_PROMPT_KEY, nil)
@@ -662,7 +662,7 @@ return function(mod)
     local flags = game and game.save and game.save.flags or {}
     local map = game and game.world and game.world.map
     local mapId = map and map.id
-    if isGold then
+    if isGen2 then
       return mapId == "ELMS_LAB" and flags.EVENT_GAVE_MYSTERY_EGG_TO_ELM == true
     end
     -- The requested Gen 1 milestone is the *completed* Oak's Parcel handoff,
@@ -778,7 +778,7 @@ return function(mod)
 
   local HELD_ITEMS
   local function heldItemFor(key, seed)
-    if not isGold then return nil end
+    if not isGen2 then return nil end
     if not HELD_ITEMS then
       HELD_ITEMS = { false }
       for itemId, item in mod.content.items:each() do
@@ -805,7 +805,7 @@ return function(mod)
       preserve_theme=mod.options:get("preserve_theme") == true,
       enforce_stage=mod.options:get("enforce_stage") == true,
       randomize_moves=mod.options:get("randomize_moves") == true,
-      randomize_held_items=isGold and mod.options:get("randomize_held_items") == true,
+      randomize_held_items=isGen2 and mod.options:get("randomize_held_items") == true,
       preset=preset,
     }
     if preset == "STORY_FRIENDLY" then
@@ -814,12 +814,12 @@ return function(mod)
       rules.randomize_leaders, rules.randomize_teams, rules.randomize_levels = true, true, true
       rules.level_variation, rules.preserve_theme, rules.enforce_stage = 3, true, true
       rules.randomize_moves = true
-      rules.randomize_held_items = isGold
+      rules.randomize_held_items = isGen2
     elseif preset == "CHAOS" then
       rules.randomize_leaders, rules.randomize_teams, rules.randomize_levels = true, true, true
       rules.level_variation, rules.preserve_theme, rules.enforce_stage = 8, false, false
       rules.randomize_moves = true
-      rules.randomize_held_items = isGold
+      rules.randomize_held_items = isGen2
     end
     return rules
   end
@@ -969,7 +969,7 @@ return function(mod)
   local function openProgressHistory()
     local game, state = mod.game, challengeActive()
     if not state then showChallengeText(game, "NO GYM CHALLENGE\nIS ACTIVE.") return end
-    local lines = { isGold and ("GYM CHALLENGE " .. string.upper(state.phase or "JOHTO")) or "GYM CHALLENGE" }
+    local lines = { isGen2 and ("GYM CHALLENGE " .. string.upper(state.phase or "JOHTO")) or "GYM CHALLENGE" }
     lines[#lines + 1] = crystal251Active() and "CRYSTAL 251: READY" or "CRYSTAL 251: NOT ACTIVE"
     local last = state.lastRoute or {}
     local routeTarget = last.gym and ((BY_ID[last.gym] and BY_ID[last.gym].name) or last.gym) or "NONE"
@@ -1040,13 +1040,13 @@ return function(mod)
       if not state.warpAfterScript then
         mod.log:warn("Gym Challenge routing paused after %s because no valid next destination exists", completedGym.id)
       end
-    elseif isGold and state.phase == "johto" then
+    elseif isGen2 and state.phase == "johto" then
       -- The first league remains a native story segment. Champion victory later
       -- unlocks the post-credits Continue checkpoint; no Kanto warp occurs yet.
       state.phase = "league1"
       state.warpAfterScript = false
       state.teleportEnabled = false
-    elseif isGold and state.phase == "kanto" then
+    elseif isGen2 and state.phase == "kanto" then
       -- The second league is also native. After the final Kanto gym, the player
       -- continues naturally to the second Elite Four and Champion.
       state.phase = "league2"
@@ -1066,7 +1066,7 @@ return function(mod)
   local function offerGoldLeaderFallback(game, gym, onDone)
     onDone = onDone or function() end
     local state = challengeActive()
-    if not (isGold and state and state.guideFallback and state.guideFallback[gym.id]
+    if not (isGen2 and state and state.guideFallback and state.guideFallback[gym.id]
       and not (state.guideRewards and state.guideRewards[gym.id])) then
       onDone()
       return
@@ -1082,7 +1082,7 @@ return function(mod)
 
   local function offerGen1QueuedContinuation(game, source)
     local state = challengeActive()
-    if isGold or not (state and state.pendingWarp) then return false end
+    if isGen2 or not (state and state.pendingWarp) then return false end
     local _, gym, destinationName = queuedRouteTarget(state)
     local destination = destinationName or "THE NEXT GYM"
     local prompt
@@ -1107,7 +1107,7 @@ return function(mod)
     local completedGym = completeEarnedGyms(game)
     if not completedGym then return false end
     local state = challengeActive()
-    if not isGold and state and state.warpAfterScript and state.teleportEnabled ~= false then
+    if not isGen2 and state and state.warpAfterScript and state.teleportEnabled ~= false then
       -- Gen 1 asks after every native reward instead of silently warping. A No
       -- keeps the destination queued for the physical Gym Guide.
       state.warpAfterScript = false
@@ -1121,7 +1121,7 @@ return function(mod)
         saveChallenge(state)
         recoverChallengeParty(game, function() warpQueuedGym() end)
       end
-      if isGold then offerGoldLeaderFallback(game, completedGym, continueRoute) else continueRoute() end
+      if isGen2 then offerGoldLeaderFallback(game, completedGym, continueRoute) else continueRoute() end
       return true
     end
     return true
@@ -1156,7 +1156,7 @@ return function(mod)
     -- A completed physical gym with a queued destination is the player's
     -- explicit later-continuation point. Let the native Gym Guide speak first,
     -- then offer this route instead of silently warping on map re-entry.
-    if not isGold and state.pendingWarp and state.completed and state.completed[gym.id] then
+    if not isGen2 and state.pendingWarp and state.completed and state.completed[gym.id] then
       pendingGuideContinuation = { gym=gym, game=mod.game }
     elseif not (state.guideRewards and state.guideRewards[gym.id]) then
       pendingGuideReward = { gym=gym, game=mod.game }
@@ -1170,7 +1170,7 @@ return function(mod)
   -- listener is unavailable or dispatched after another screen transition.
   mod.hooks:wrap("script.command", function(nextCommand, ctx, name, args)
     local result = nextCommand(ctx, name, args)
-    if not isGold and name == "set_flag" and args and args[1] == "EVENT_ROUTE22_RIVAL_WANTS_BATTLE" then
+    if not isGen2 and name == "set_flag" and args and args[1] == "EVENT_ROUTE22_RIVAL_WANTS_BATTLE" then
       local game = mod.game
       local map = game and game.world and game.world.map
       if map and map.id == "OAKS_LAB" then
@@ -1190,12 +1190,12 @@ return function(mod)
   mod.events:on("script.ended", function(event)
     if not (event and event.completed) then return end
     local milestoneGame = mod.game
-    if isGold and postIntroMilestoneReady(milestoneGame)
+    if isGen2 and postIntroMilestoneReady(milestoneGame)
       and not challengeActive() and not mod.save:get(GYM_CHALLENGE_OFFERED_KEY) then
       offerChallengeAtMilestone(milestoneGame)
       return
     end
-    if isGold and pendingGuideReward then
+    if isGen2 and pendingGuideReward then
       local pending = pendingGuideReward
       pendingGuideReward = nil
       deliverGuideReward(pending.game, pending.gym)
@@ -1205,7 +1205,7 @@ return function(mod)
     if not state then return end
     local game = mod.game
     if state.warpAfterScript then
-      if not isGold then
+      if not isGen2 then
         -- Gen 1 reward completion is followed by the player-facing choice from
         -- `onVictory`; do not let this general script event silently consume it.
         return
@@ -1224,7 +1224,7 @@ return function(mod)
   -- and the exact completed parcel script consumes that decision.
   mod.events:on("map.entered", function()
     local game = mod.game
-    if isGold and postIntroMilestoneReady(game)
+    if isGen2 and postIntroMilestoneReady(game)
       and not challengeActive() and not mod.save:get(GYM_CHALLENGE_OFFERED_KEY) then
       offerChallengeAtMilestone(game)
     end
@@ -1232,7 +1232,7 @@ return function(mod)
 
   mod.events:on("battle.ended", function(event)
     local battle = event and event.battle
-    if not isGold then
+    if not isGen2 then
       local game = mod.game
       local map = game and game.world and game.world.map
       -- `BattleState.newTrainer` publishes the live trainer class as
@@ -1269,7 +1269,7 @@ return function(mod)
     -- Gold's first Hall of Fame returns to the title screen. The next Continue
     -- must preserve the native post-game spawn and ask before restarting Gym
     -- Challenge routing for Kanto.
-    if isGold and state.phase == "league1" and state.championDefeated
+    if isGen2 and state.phase == "league1" and state.championDefeated
       and event and event.mapId == "NEW_BARK_TOWN" and event.via == "boot" then
       state.championDefeated = false
       state.teleportEnabled = false
@@ -1303,13 +1303,13 @@ return function(mod)
   end)
 
   mod.events:on("screen.popped", function()
-    if not isGold and pendingGuideContinuation then
+    if not isGen2 and pendingGuideContinuation then
       local pending = pendingGuideContinuation
       pendingGuideContinuation = nil
       offerGen1QueuedContinuation(pending.game, "guide")
       return
     end
-    if not isGold and pendingGuideReward then
+    if not isGen2 and pendingGuideReward then
       local pending = pendingGuideReward
       pendingGuideReward = nil
       deliverGuideReward(pending.game, pending.gym)
@@ -1317,7 +1317,7 @@ return function(mod)
     end
   end)
 
-  if isGold then
+  if isGen2 then
     local function paint(npc, sprite)
       local def = mod.content.sprites:get(sprite)
       if not (npc and def) then return end

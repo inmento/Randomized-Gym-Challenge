@@ -1,7 +1,10 @@
 local callbacks, storage, trainers, maps, npcs, mapScripts = { hooks = {}, events = {} }, {}, {}, {}, {}, {}
 
 package.preload["src.core.GameVersion"] = function()
-  return { get = function() return "red" end }
+  return {
+    get = function() return "red" end,
+    generation = function(id) return (id == "gold" or id == "silver") and 2 or 1 end,
+  }
 end
 package.preload["data.scripts.victories"] = function()
   return {

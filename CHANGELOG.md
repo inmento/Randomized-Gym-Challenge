@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.10 — Silver support
+
+Randomized Gym Challenge now recognizes **Pokémon Silver** as Generation 2 and runs the same established Elm milestone, sixteen-gym, guide-reward, post-credits Continue, and second-league completion flow as Gold. Silver no longer incorrectly enters the Gen 1 Oak/Pokédex and eight-gym logic.
+
+This is a direct root-cause correction using Gen1Recomp’s shared `GameVersion.generation()` contract rather than a duplicate Silver challenge implementation. The Gen 1 harness, existing Gold harnesses, and the full shared Gold/Silver challenge-flow harness pass.
+
 ## 1.1.9 — Early opt-in and automatic Gen 1 challenge start
 
 Gen 1 no longer asks the player to accept Gym Challenge through Oak after the parcel/Pokédex cutscene. Instead, immediately after naming the player during the normal opening, a Yes/No text box asks whether to take the Gym Challenge. Choosing No leaves the game entirely normal.

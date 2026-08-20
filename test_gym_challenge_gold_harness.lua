@@ -1,7 +1,15 @@
 local callbacks, storage, trainers, maps, npcs = { hooks = {}, events = {} }, {}, {}, {}, {}
+local activeGame = rawget(_G, "RANDOMIZED_GYM_CHALLENGE_TEST_GAME") or "gold"
+assert(activeGame == "gold" or activeGame == "silver", "Gen 2 harness requires Gold or Silver")
 
 package.preload["src.core.GameVersion"] = function()
-  return { get = function() return "gold" end }
+  return {
+    get = function() return activeGame end,
+    generation = function(id)
+      assert(id == activeGame, "Randomized Gym Challenge must classify the active Gen 2 version")
+      return 2
+    end,
+  }
 end
 package.preload["src.render.TextBox"] = function()
   return { new=function(_, text, done, opts) return { text=text, done=done, choice=opts and opts.choice } end }
@@ -222,4 +230,4 @@ assert(game.save.player.badges.ZEPHYR == savedBadge and game.save.party[1].level
   and game.save.inventory.ITEM_7 == savedItem,
   "Gold abandon altered native progress, party, or inventory")
 
-print("randomized gym challenge Gold hardening, routing, recovery, and Kanto-handoff harness: valid")
+print("randomized gym challenge " .. activeGame .. " hardening, routing, recovery, and Kanto-handoff harness: valid")
