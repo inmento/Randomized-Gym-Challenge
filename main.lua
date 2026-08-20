@@ -1,5 +1,5 @@
 -- Randomized Gym Challenge
--- Release 1.1.8
+-- Release 1.1.9
 -- Gen 1 Recomp mod API 2
 --
 -- This is intentionally separate from Gym Leader Shuffle.  It uses the same
@@ -172,8 +172,9 @@ return function(mod)
   -- battle plan. The plan can be rebuilt for testing without erasing a
   -- player’s accepted challenge, earned gyms, or routing state.
   local GYM_CHALLENGE_KEY = "gym_challenge_state"
-  -- `gym_challenge_opt_in` belonged to the retired intro prompt. Keep it only
-  -- so older pre-stable saves can be cleaned up; milestone offers use new keys.
+  -- Gen 1 records the player's answer immediately after player naming. The
+  -- answer merely arms the challenge; no gameplay changes happen until the
+  -- completed native Oak parcel/Pokédex cutscene reaches its final command.
   local GYM_CHALLENGE_PROMPT_KEY = "gym_challenge_opt_in"
   local GYM_CHALLENGE_OFFERED_KEY = "gym_challenge_offer_seen_v2"
   local GYM_CHALLENGE_PENDING_KEY = "gym_challenge_offer_pending_v2"
@@ -350,6 +351,33 @@ return function(mod)
     else
       onChoice(false)
     end
+  end
+
+  -- Gen 1’s supported intro step API places this decision immediately after
+  -- player naming, without modifying Oak’s story dialogue or relying on an
+  -- overworld event after the cutscene. Gold retains its separate Elm flow.
+  if not isGold then
+    mod.hooks:wrap("intro.oak_speech.build", function(next, steps, speech)
+      steps = next(steps, speech)
+      mod.ui.insertStepAfter(steps, "name_player", {
+        id="gym_challenge_opt_in",
+        kind="yesno",
+        text="DO YOU WANT TO TAKE\nTHE GYM CHALLENGE?",
+        values={ true, false },
+        saveKey="gym_challenge_opt_in",
+        defaultNo=true,
+      })
+      return steps
+    end)
+
+    mod.events:on("intro.oak_speech.answered", function(event)
+      local step = event and event.step
+      if step and step.id == "gym_challenge_opt_in" then
+        mod.save:set(GYM_CHALLENGE_PROMPT_KEY, event.value == true)
+        mod.save:set(GYM_CHALLENGE_OFFERED_KEY, true)
+        mod.save:set(GYM_CHALLENGE_PENDING_KEY, nil)
+      end
+    end)
   end
 
   local function guideEncouragementText(gym, itemId, status, quantity)
@@ -606,6 +634,25 @@ return function(mod)
         showChallengeText(game, challengeStartSummary(state, firstGym), function()
           recoverChallengeParty(game, function() warpQueuedGym() end)
         end)
+      end)
+    end)
+    return true
+  end
+
+  local function startGen1OptedInChallenge(game)
+    if isGold or challengeActive() or mod.save:get(GYM_CHALLENGE_PROMPT_KEY) ~= true then return false end
+    -- Consume the one-time intro decision before routing so reloading during a
+    -- displayed explanation cannot duplicate the starter adjustment or warp.
+    mod.save:set(GYM_CHALLENGE_PROMPT_KEY, nil)
+    local started, state, firstGym = beginAcceptedChallenge(game)
+    if not started then
+      showChallengeText(game, "CHALLENGE ROUTING\nIS PAUSED.\fOPEN PROGRESS HISTORY\nFOR THE STATUS.")
+      return false
+    end
+    local text = "GYM CHALLENGE\nBEGINS NOW!\fDEFEAT EACH GYM LEADER.\nAFTER A BADGE, CONTINUE\nNOW OR ASK THE GYM GUIDE\nLATER.\fHP IS RESTORED BETWEEN\nGYMS, BUT PP IS NOT."
+    showChallengeText(game, text, function()
+      showChallengeText(game, challengeStartSummary(state, firstGym), function()
+        recoverChallengeParty(game, function() warpQueuedGym() end)
       end)
     end)
     return true
@@ -1127,14 +1174,13 @@ return function(mod)
       local game = mod.game
       local map = game and game.world and game.world.map
       if map and map.id == "OAKS_LAB" then
+        -- This exact final native command is reached only after Oak has taken
+        -- the parcel, awarded the Pokédex, and the rival has departed. It now
+        -- starts a challenge already chosen after player naming; Oak is never
+        -- asked to display a separate prompt.
         ctx.afterScript = ctx.afterScript or {}
         ctx.afterScript[#ctx.afterScript + 1] = function()
-          local milestoneGame = mod.game
-          if postIntroMilestoneReady(milestoneGame)
-            and not challengeActive() and not mod.save:get(GYM_CHALLENGE_OFFERED_KEY) then
-            mod.save:set(GYM_CHALLENGE_PENDING_KEY, nil)
-            offerChallengeAtMilestone(milestoneGame)
-          end
+          startGen1OptedInChallenge(mod.game)
         end
       end
     end
@@ -1144,9 +1190,8 @@ return function(mod)
   mod.events:on("script.ended", function(event)
     if not (event and event.completed) then return end
     local milestoneGame = mod.game
-    if postIntroMilestoneReady(milestoneGame)
+    if isGold and postIntroMilestoneReady(milestoneGame)
       and not challengeActive() and not mod.save:get(GYM_CHALLENGE_OFFERED_KEY) then
-      if not isGold then mod.save:set(GYM_CHALLENGE_PENDING_KEY, nil) end
       offerChallengeAtMilestone(milestoneGame)
       return
     end
@@ -1174,14 +1219,13 @@ return function(mod)
     advanceChallengeAfterReward(game, game and game.world)
   end)
 
-  -- Existing saves do not replay the native parcel handoff. Once the player
-  -- returns to Oak's Lab, use the completed native milestone flags to show the
-  -- same one-time offer. `map.entered` is the engine's emitted map event.
+  -- Gold keeps its established Elm milestone fallback. Gen 1 no longer uses
+  -- map entry or Oak dialogue as a prompt path: the player decides after naming
+  -- and the exact completed parcel script consumes that decision.
   mod.events:on("map.entered", function()
     local game = mod.game
-    if postIntroMilestoneReady(game)
+    if isGold and postIntroMilestoneReady(game)
       and not challengeActive() and not mod.save:get(GYM_CHALLENGE_OFFERED_KEY) then
-      if not isGold then mod.save:set(GYM_CHALLENGE_PENDING_KEY, nil) end
       offerChallengeAtMilestone(game)
     end
   end)
@@ -1651,7 +1695,6 @@ return function(mod)
     if state and not state.acceptedPostIntro and next(state.completed or {}) == nil then
       mod.save:set(GYM_CHALLENGE_KEY, nil)
     end
-    mod.save:set(GYM_CHALLENGE_PROMPT_KEY, nil)
     mod.save:set(GYM_CHALLENGE_PENDING_KEY, nil)
   end)
 

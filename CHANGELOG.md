@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.1.9 — Early opt-in and automatic Gen 1 challenge start
+
+Gen 1 no longer asks the player to accept Gym Challenge through Oak after the parcel/Pokédex cutscene. Instead, immediately after naming the player during the normal opening, a Yes/No text box asks whether to take the Gym Challenge. Choosing No leaves the game entirely normal.
+
+Choosing Yes records the decision only; the starter, Oak’s Lab rival battle, parcel delivery, Pokédex dialogue, and rival departure still proceed natively. At the final command of that completed parcel/Pokédex script, the mod automatically shows a clear Gym Challenge explanation, raises the accepted starter under the established type-based rule, restores party HP only, and routes the player to the first gym. The native map, collision, parcel script, Pokédex award, and story flags are unchanged.
+
+This removes the unreliable standalone Oak prompt and its map-entry fallback from the Gen 1 flow. Crystal 251 and the selected starter do not determine whether the opt-in or post-Pokédex start occurs.
+
 ## 1.1.8 — Direct Oak cutscene completion hook
 
 This release fixes the remaining Gen 1 new-save offer failure by attaching Gym Challenge directly to the final native Oak parcel/Pokédex cutscene command. The prompt is now queued through that script’s own post-completion callback, after the Pokédex, rival departure, and Route 22 progression flag have all been applied. It no longer depends solely on a generic script lifecycle listener reaching the prompt at the correct moment.

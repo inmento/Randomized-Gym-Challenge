@@ -1,7 +1,7 @@
 {
   "id": "randomized_gym_challenge",
   "name": "Randomized Gym Challenge",
-  "version": "1.1.8",
+  "version": "1.1.9",
   "entry": "main.lua",
   "api": 2,
   "game_version": ">=0.1.99",
@@ -12,5 +12,5 @@
   "conflicts": ["gym_leader_shuffle"],
   "permissions": ["engine_internals"],
   "github": "inmento/Randomized-Gym-Challenge",
-  "description": "Configurable gym-battle generator with milestone-gated Gym Challenge progression, guarded routing, recoverable per-save challenge controls, Gold Continue-gated two-league progression, start summaries, diagnostics, weighted Gym Guide rewards, progress history, hints, presets, and optional Crystal 251-safe live-data compatibility for Red, Blue, Yellow, and Gold. All gameplay-changing options start off."
+  "description": "Configurable gym-battle generator with early Gen 1 opt-in and automatic post-Pokédex Gym Challenge start, guarded routing, recoverable per-save challenge controls, Gold Continue-gated two-league progression, rewards, history, hints, presets, and optional Crystal 251-safe live-data compatibility. All gameplay-changing options start off."
 }

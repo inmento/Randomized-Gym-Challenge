@@ -66,6 +66,8 @@ game = {
   stack={
     push=function(_, box)
       game.lastText = box.text
+      game.shownTexts = game.shownTexts or {}
+      game.shownTexts[#game.shownTexts + 1] = box.text
       if box.choice then game.pendingChoice=box.choice
       elseif box.done then box.done() end
     end,
@@ -79,7 +81,13 @@ end
 local mod = {
   id="randomized_gym_challenge", game=game,
   options={ define=function(_, schema) callbacks.schema=schema end, get=function(_, key) return options[key] end },
-  ui={ insertStepAfter=function(steps, anchor, row) assert(anchor == "name_player"); table.insert(steps, row) end },
+  ui={ insertStepAfter=function(steps, anchor, row)
+    assert(anchor == "name_player")
+    local index
+    for i, step in ipairs(steps) do if step.id == anchor then index = i; break end end
+    table.insert(steps, (index or #steps) + 1, row)
+    return steps
+  end },
   content={
     trainers={ get=function(_, id) return trainers[id] end, each=function() return pairs(trainers) end },
     maps={ get=function(_, id) return maps[id] end },
@@ -122,7 +130,17 @@ for _, row in ipairs(callbacks.schema) do schemaKeys[row.key] = true end
 assert(schemaKeys.challenge_progress_action and schemaKeys.challenge_hint_action
   and schemaKeys.abandon_challenge_action and schemaKeys.difficulty_preset,
   "progress, hint, abandon, and preset options are missing")
-assert(not callbacks.hooks["intro.oak_speech.build"], "Gym Challenge must not alter Oak's introduction")
+assert(callbacks.hooks["intro.oak_speech.build"],
+  "Gym Challenge did not install the supported post-name opt-in step")
+local introSteps = callbacks.hooks["intro.oak_speech.build"](function(steps) return steps end, {
+  { id="name_player", kind="name" }, { id="confirm_player_name", kind="say" },
+})
+assert(introSteps[2] and introSteps[2].id == "gym_challenge_opt_in"
+  and introSteps[2].kind == "yesno" and introSteps[2].defaultNo == true,
+  "Gym Challenge opt-in was not inserted immediately after player naming")
+emit("intro.oak_speech.answered", { step=introSteps[2], value=true })
+assert(storage.gym_challenge_opt_in == true and storage.gym_challenge_offer_seen_v2 == true,
+  "accepting the post-name Gym Challenge opt-in did not arm the new save")
 for mapId, rows in pairs(mapScripts) do
   for _, row in ipairs(rows) do
     for textId in pairs(row.talk or {}) do
@@ -132,8 +150,9 @@ for mapId, rows in pairs(mapScripts) do
   end
 end
 
--- The offer appears only after the player has a starter, defeated the native
--- Oak's Lab rival, and completed the later Oak's Parcel/Pokédex cutscene.
+-- The early opt-in changes no gameplay during the native opening. It is consumed
+-- only after the player has a starter, defeated the native Oak's Lab rival, and
+-- completed the later Oak's Parcel/Pokédex cutscene.
 game.world.map={ id="OAKS_LAB" }
 emit("script.ended", { completed=true })
 assert(not game.pendingChoice and not storage.gym_challenge_state,
@@ -155,10 +174,10 @@ callbacks.hooks["script.command"](function(ctx, name, args)
 end, oakParcelContext, "set_flag", { "EVENT_ROUTE22_RIVAL_WANTS_BATTLE" })
 assert(not game.pendingChoice, "Gym Challenge offered before the native Oak parcel script finished")
 for _, afterScript in ipairs(oakParcelContext.afterScript or {}) do afterScript() end
-assert(game.pendingChoice and not storage.gym_challenge_state,
-  "Gen 1 Gym Challenge offer did not follow the completed Oak parcel handoff")
-game.pendingChoice(true)
-local state = assert(storage.gym_challenge_state, "accepted Gen 1 Gym Challenge did not create state")
+assert(not game.pendingChoice,
+  "Gen 1 Gym Challenge displayed a second Oak prompt instead of consuming the early opt-in")
+local state = assert(storage.gym_challenge_state,
+  "accepted early opt-in did not start the Gen 1 Gym Challenge after the completed Oak handoff")
 assert(state.acceptedPostIntro and state.starterLeveled and state.pendingWarp == nil,
   "accepted Gen 1 challenge did not finalize its starter state")
 assert(game.save.party[1].level == 12, "neutral Gen 1 starter was not raised to the first-gym baseline")
@@ -171,6 +190,12 @@ assert(state.lastRoute and state.lastRoute.status == "WARPED" and state.lastRout
 assert(game.lastText and game.lastText:find("FIRST GYM: BROCK", 1, true)
   and game.lastText:find("PRESET: MANUAL", 1, true),
   "accepted Gen 1 Gym Challenge did not display its reproducible start summary")
+local explained
+for _, text in ipairs(game.shownTexts or {}) do
+  if text:find("GYM CHALLENGE\nBEGINS NOW!", 1, true) then explained = true; break end
+end
+assert(explained,
+  "accepted Gen 1 Gym Challenge did not explain the challenge before routing to Pewter")
 
 -- A non-battling Gym Guide keeps its native talk first, then grants one
 -- deterministic, non-junk encouragement item. A full bag leaves the reward
@@ -270,19 +295,19 @@ assert(game.save.inventory.BOULDERBADGE == savedBadge and game.save.party[1].lev
   and game.save.inventory[brockReward] == savedReward,
   "abandon altered native progress, party, or inventory")
 
--- Installing the fix on a save that already completed the Oak parcel/Pokédex
--- sequence must not require replaying any intro event. Returning to Oak's Lab
--- uses the engine's canonical map.entered event and durable native flags.
+-- Gen 1 no longer presents an Oak's Lab fallback prompt on an existing save:
+-- the durable decision is made only in the post-name intro step, preventing a
+-- missed or duplicate offer after the parcel cutscene.
 storage.gym_challenge_offer_seen_v2 = nil
 storage.gym_challenge_offer_pending_v2 = nil
+storage.gym_challenge_opt_in = nil
 game.pendingChoice = nil
 game.world.map = { id="OAKS_LAB" }
 game.save.flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB = true
 game.save.flags.EVENT_OAK_GOT_PARCEL = true
 game.save.flags.EVENT_GOT_POKEDEX = true
 emit("map.entered", { mapId="OAKS_LAB", map=game.world.map })
-assert(game.pendingChoice and not storage.gym_challenge_state,
-  "qualifying existing Gen 1 save did not receive the corrected Oak's Lab offer")
-game.pendingChoice(false)
+assert(not game.pendingChoice and not storage.gym_challenge_state,
+  "Gen 1 existing-save re-entry incorrectly displayed the retired Oak prompt")
 
 print("randomized gym challenge Gen 1 hardening, routing, and recovery harness: valid")
