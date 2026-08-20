@@ -257,4 +257,17 @@ assert(game.save.inventory.BOULDERBADGE == savedBadge and game.save.party[1].lev
   and game.save.inventory[brockReward] == savedReward,
   "abandon altered native progress, party, or inventory")
 
+-- Installing the fix on a save that already completed the Oak's Lab rival must
+-- not require replaying the battle. Returning to Oak's Lab reuses the durable
+-- native flag and offers the corrected post-rival choice once.
+storage.gym_challenge_offer_seen_v2 = nil
+storage.gym_challenge_offer_pending_v2 = nil
+game.pendingChoice = nil
+game.world.map = { id="OAKS_LAB" }
+game.save.flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB = true
+emit("world.map_entered", { game=game })
+assert(game.pendingChoice and not storage.gym_challenge_state,
+  "qualifying existing Gen 1 save did not receive the corrected Oak's Lab offer")
+game.pendingChoice(false)
+
 print("randomized gym challenge Gen 1 hardening, routing, and recovery harness: valid")

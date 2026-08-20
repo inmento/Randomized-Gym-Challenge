@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.1.6 — Existing-save Oak’s Lab offer migration
+
+A save that had already completed the Oak’s Lab starter rival before installing the progression repair could not replay that native exit script. In Gen 1, returning to Oak’s Lab now checks the durable native rival-completion flag and presents the same one-time Gym Challenge offer. Existing saves do not need to restart or replay the rival battle.
+
 ## 1.1.5 — Gen 1 Gym Challenge progression repair
 
 This hotfix corrects the Gen 1 post-intro trigger by recognizing the Oak's Lab starter rival through the engine’s live trainer class. Oak now offers Gym Challenge only after the rival’s complete post-battle departure script has finished.

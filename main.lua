@@ -1,5 +1,5 @@
 -- Randomized Gym Challenge
--- Release 1.1.5
+-- Release 1.1.6
 -- Gen 1 Recomp mod API 2
 --
 -- This is intentionally separate from Gym Leader Shuffle.  It uses the same
@@ -618,8 +618,12 @@ return function(mod)
     if isGold then
       return mapId == "ELMS_LAB" and flags.EVENT_GAVE_MYSTERY_EGG_TO_ELM == true
     end
-    return mapId == "OAKS_LAB" and mod.save:get(GYM_CHALLENGE_PENDING_KEY) == true
-      and flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB == true
+    -- A new game arms the pending key when the starter rival battle ends. An
+    -- existing save can already carry the native flag when 1.1.5 is installed,
+    -- so the durable cart flag is the authority once the player is in Oak's Lab.
+    return mapId == "OAKS_LAB" and flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB == true
+      and (mod.save:get(GYM_CHALLENGE_PENDING_KEY) == true
+        or (not challengeActive() and not mod.save:get(GYM_CHALLENGE_OFFERED_KEY)))
   end
 
   local PRE_EVOLUTION
@@ -1141,6 +1145,18 @@ return function(mod)
       return
     end
     advanceChallengeAfterReward(game, game and game.world)
+  end)
+
+  -- Existing saves do not replay the native rival-exit script. Once a player
+  -- returns to Oak's Lab, use its already-written native flag to show the same
+  -- one-time offer that a new save receives from `script.ended`.
+  mod.events:on("world.map_entered", function()
+    local game = mod.game
+    if postIntroMilestoneReady(game)
+      and not challengeActive() and not mod.save:get(GYM_CHALLENGE_OFFERED_KEY) then
+      if not isGold then mod.save:set(GYM_CHALLENGE_PENDING_KEY, nil) end
+      offerChallengeAtMilestone(game)
+    end
   end)
 
   mod.events:on("battle.ended", function(event)
