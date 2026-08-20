@@ -132,8 +132,8 @@ for mapId, rows in pairs(mapScripts) do
   end
 end
 
--- The offer appears only after the player has a starter, defeats the native
--- Oak's Lab rival, and the native victory script writes its completion flag.
+-- The offer appears only after the player has a starter, defeated the native
+-- Oak's Lab rival, and completed the later Oak's Parcel/Pokédex cutscene.
 game.world.map={ id="OAKS_LAB" }
 emit("script.ended", { completed=true })
 assert(not game.pendingChoice and not storage.gym_challenge_state,
@@ -142,8 +142,13 @@ emit("battle.ended", { result="win", battle={ oppClass="OPP_RIVAL1", trainer={} 
 assert(not game.pendingChoice, "Gym Challenge offered before the native rival script completed")
 game.save.flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB = true
 emit("script.ended", { completed=true })
+assert(not game.pendingChoice,
+  "Gym Challenge offered before Oak received the parcel and gave the Pokédex")
+game.save.flags.EVENT_OAK_GOT_PARCEL = true
+game.save.flags.EVENT_GOT_POKEDEX = true
+emit("script.ended", { completed=true })
 assert(game.pendingChoice and not storage.gym_challenge_state,
-  "Gen 1 Gym Challenge offer did not wait for the completed Oak's Lab rival battle")
+  "Gen 1 Gym Challenge offer did not follow the completed Oak parcel handoff")
 game.pendingChoice(true)
 local state = assert(storage.gym_challenge_state, "accepted Gen 1 Gym Challenge did not create state")
 assert(state.acceptedPostIntro and state.starterLeveled and state.pendingWarp == nil,
@@ -257,15 +262,17 @@ assert(game.save.inventory.BOULDERBADGE == savedBadge and game.save.party[1].lev
   and game.save.inventory[brockReward] == savedReward,
   "abandon altered native progress, party, or inventory")
 
--- Installing the fix on a save that already completed the Oak's Lab rival must
--- not require replaying the battle. Returning to Oak's Lab reuses the durable
--- native flag and offers the corrected post-rival choice once.
+-- Installing the fix on a save that already completed the Oak parcel/Pokédex
+-- sequence must not require replaying any intro event. Returning to Oak's Lab
+-- uses the engine's canonical map.entered event and durable native flags.
 storage.gym_challenge_offer_seen_v2 = nil
 storage.gym_challenge_offer_pending_v2 = nil
 game.pendingChoice = nil
 game.world.map = { id="OAKS_LAB" }
 game.save.flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB = true
-emit("world.map_entered", { game=game })
+game.save.flags.EVENT_OAK_GOT_PARCEL = true
+game.save.flags.EVENT_GOT_POKEDEX = true
+emit("map.entered", { mapId="OAKS_LAB", map=game.world.map })
 assert(game.pendingChoice and not storage.gym_challenge_state,
   "qualifying existing Gen 1 save did not receive the corrected Oak's Lab offer")
 game.pendingChoice(false)

@@ -618,12 +618,14 @@ return function(mod)
     if isGold then
       return mapId == "ELMS_LAB" and flags.EVENT_GAVE_MYSTERY_EGG_TO_ELM == true
     end
-    -- A new game arms the pending key when the starter rival battle ends. An
-    -- existing save can already carry the native flag when 1.1.5 is installed,
-    -- so the durable cart flag is the authority once the player is in Oak's Lab.
-    return mapId == "OAKS_LAB" and flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB == true
-      and (mod.save:get(GYM_CHALLENGE_PENDING_KEY) == true
-        or (not challengeActive() and not mod.save:get(GYM_CHALLENGE_OFFERED_KEY)))
+    -- The requested Gen 1 milestone is the *completed* Oak's Parcel handoff,
+    -- after the earlier Oak's Lab rival victory. The native handoff script sets
+    -- these durable flags only after its Pokédex dialogue and rival departure,
+    -- which makes this safe for both a fresh sequence and an existing save.
+    return mapId == "OAKS_LAB"
+      and flags.EVENT_BATTLED_RIVAL_IN_OAKS_LAB == true
+      and flags.EVENT_OAK_GOT_PARCEL == true
+      and flags.EVENT_GOT_POKEDEX == true
   end
 
   local PRE_EVOLUTION
@@ -1147,10 +1149,10 @@ return function(mod)
     advanceChallengeAfterReward(game, game and game.world)
   end)
 
-  -- Existing saves do not replay the native rival-exit script. Once a player
-  -- returns to Oak's Lab, use its already-written native flag to show the same
-  -- one-time offer that a new save receives from `script.ended`.
-  mod.events:on("world.map_entered", function()
+  -- Existing saves do not replay the native parcel handoff. Once the player
+  -- returns to Oak's Lab, use the completed native milestone flags to show the
+  -- same one-time offer. `map.entered` is the engine's emitted map event.
+  mod.events:on("map.entered", function()
     local game = mod.game
     if postIntroMilestoneReady(game)
       and not challengeActive() and not mod.save:get(GYM_CHALLENGE_OFFERED_KEY) then
@@ -1171,9 +1173,9 @@ return function(mod)
       local classId = battle and battle.oppClass or trainer.classId or trainer.class or trainer.id
       if event and event.result == "win" and map and map.id == "OAKS_LAB"
         and (classId == "OPP_RIVAL1" or classId == "RIVAL1" or classId == "RIVAL") then
-        -- The native exit script writes EVENT_BATTLED_RIVAL_IN_OAKS_LAB after
-        -- this event. `script.ended` then presents the challenge only after the
-        -- rival's complete departure dialogue, at the requested post-rival beat.
+        -- Record the native rival win for legacy-save diagnostics only. The
+        -- offer itself is intentionally gated by Oak's later parcel/Pokédex
+        -- completion flags, so it cannot fire before the requested handoff.
         mod.save:set(GYM_CHALLENGE_PENDING_KEY, true)
       end
       return

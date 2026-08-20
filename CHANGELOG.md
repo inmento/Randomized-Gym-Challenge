@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.7 — Gen 1 post-parcel offer correction
+
+This release fixes the Gen 1 Gym Challenge offer failing to appear after the player returns Oak’s Parcel. The offer is now keyed to the completed native Oak’s Lab milestone: the player must have defeated the starter rival, delivered the parcel, and received the Pokédex. This is the exact sequence that finishes after the rival departs.
+
+The existing-save fallback now listens to the engine’s real `map.entered` event instead of the non-emitted `world.map_entered` name. Therefore, a player who has already completed the parcel/Pokédex sequence can simply return to Oak’s Lab and receive the one-time offer; no restart or replay is required.
+
 ## 1.1.6 — Existing-save Oak’s Lab offer migration
 
 A save that had already completed the Oak’s Lab starter rival before installing the progression repair could not replay that native exit script. In Gen 1, returning to Oak’s Lab now checks the durable native rival-completion flag and presents the same one-time Gym Challenge offer. Existing saves do not need to restart or replay the rival battle.
