@@ -1,16 +1,23 @@
 {
   "id": "randomized_gym_challenge",
   "name": "Randomized Gym Challenge",
-  "version": "1.1.10",
+  "version": "1.1.11",
   "entry": "main.lua",
   "api": 2,
-  "game_version": ">=0.1.99",
+  "game_version": ">=0.2.18",
   "category": "GAMEPLAY",
   "profile": "content",
-  "games": ["gen1", "gen2"],
+  "games": [
+    "gen1",
+    "gen2"
+  ],
   "affects_link": false,
-  "conflicts": ["gym_leader_shuffle"],
-  "permissions": ["engine_internals"],
+  "conflicts": [
+    "gym_leader_shuffle"
+  ],
+  "permissions": [
+    "engine_internals"
+  ],
   "github": "inmento/Randomized-Gym-Challenge",
   "description": "Configurable gym-battle generator with early Gen 1 opt-in and automatic post-Pokédex Gym Challenge start, guarded routing, recoverable per-save challenge controls, Gold-and-Silver Continue-gated two-league progression, rewards, history, hints, presets, and optional Crystal 251-safe live-data compatibility. All gameplay-changing options start off."
 }
